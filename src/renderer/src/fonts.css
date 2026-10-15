@@ -1,0 +1,16 @@
+/* Inter, bundled with the app (SIL Open Font License 1.1). Weights 400 and 600 only. */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url('../../../node_modules/inter-ui/web/Inter-Regular.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: block;
+  src: url('../../../node_modules/inter-ui/web/Inter-SemiBold.woff2') format('woff2');
+}

@@ -1,0 +1,47 @@
+{
+  "name": "scribeforge",
+  "productName": "ScribeForge",
+  "version": "0.1.0",
+  "description": "An open-source, offline PDF toolkit for Windows. A BC6 app.",
+  "license": "Apache-2.0",
+  "author": "BC6",
+  "private": true,
+  "type": "module",
+  "main": "./out/main/index.js",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "postinstall": "install-electron",
+    "trial": "node scripts/trial.mjs",
+    "trial:reset": "node scripts/trial.mjs --reset",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "fixtures": "node scripts/make-fixtures.mjs",
+    "notices": "node scripts/make-notices.mjs",
+    "icons": "node scripts/make-icons.mjs",
+    "e2e": "npm run build && npm run fixtures && playwright test --project=dev",
+    "pack": "npm run build && electron-builder --dir",
+    "e2e:packaged": "npm run pack && npm run fixtures && playwright test --project=packaged",
+    "dist": "npm run build && electron-builder"
+  },
+  "devDependencies": {
+    "@cantoo/pdf-lib": "2.11.1",
+    "@playwright/test": "1.64.1",
+    "@types/node": "24.19.2",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "electron": "44.7.2",
+    "electron-builder": "26.15.3",
+    "electron-vite": "6.0.0",
+    "inter-ui": "4.1.1",
+    "pdfjs-dist": "6.4.299",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "typescript": "7.0.2",
+    "vite": "8.3.4",
+    "vitest": "5.0.5"
+  }
+}

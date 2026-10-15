@@ -1,0 +1,27 @@
+appId: com.bc6.scribeforge
+productName: ScribeForge
+copyright: Copyright © 2026 BC6
+directories:
+  output: release
+  buildResources: build
+# Everything the app uses is bundled into out/ at build time, so no node_modules ship.
+files:
+  - out/**
+  - package.json
+extraResources:
+  - from: THIRD-PARTY-NOTICES.md
+    to: THIRD-PARTY-NOTICES.md
+  - from: LICENSE
+    to: LICENSE
+asar: true
+npmRebuild: false
+win:
+  target: nsis
+  icon: build/icon.png
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  artifactName: ${productName} Setup ${version}.${ext}
+  shortcutName: ScribeForge
+  uninstallDisplayName: ScribeForge
