@@ -20,6 +20,19 @@ export async function openWithDialog(win: BrowserWindow, store: SettingsStore): 
   return openPath(result.filePaths[0], store);
 }
 
+/** Choose several PDFs at once, to add their pages to the open document. */
+export async function openManyWithDialog(win: BrowserWindow, store: SettingsStore): Promise<OpenResult[]> {
+  const result = await dialog.showOpenDialog(win, {
+    title: 'Add pages from other PDFs',
+    properties: ['openFile', 'multiSelections'],
+    filters: [{ name: 'PDF files', extensions: ['pdf'] }],
+  });
+  if (result.canceled) return [];
+  const opened: OpenResult[] = [];
+  for (const filePath of result.filePaths) opened.push(await openPath(filePath, store));
+  return opened;
+}
+
 export async function openPath(filePath: string, store: SettingsStore): Promise<OpenResult> {
   if (typeof filePath !== 'string' || !path.isAbsolute(filePath)) {
     return { ok: false, reason: 'unreadable', path: String(filePath) };

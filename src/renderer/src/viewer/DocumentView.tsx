@@ -4,7 +4,7 @@ import { EventBus, PDFFindController, PDFLinkService, PDFViewer } from 'pdfjs-di
 import type { MenuCommand } from '../../../shared/api';
 import { isOpenableLink } from '../../../shared/links';
 import { Icon } from '../components/Icon';
-import { pdfjsLib, type PdfDocument } from './pdfjs';
+import { PDFJS_ASSETS, pdfjsLib, type PdfDocument } from './pdfjs';
 import { Thumbnails } from './Thumbnails';
 
 const ZOOM_CHOICES: { value: string; label: string }[] = [
@@ -28,6 +28,7 @@ interface FindStatus {
 export function DocumentView({
   pdf,
   name,
+  changed,
   command,
   onAskLink,
   onRefusedLink,
@@ -35,6 +36,8 @@ export function DocumentView({
 }: {
   pdf: PdfDocument;
   name: string;
+  /** Page changes not saved yet (made on the Pages screen). */
+  changed: boolean;
   /** A menu command for this screen, with a counter so repeats still arrive. */
   command: { name: MenuCommand; seq: number } | null;
   onAskLink: (address: string) => void;
@@ -68,6 +71,7 @@ export function DocumentView({
       annotationMode: pdfjsLib.AnnotationMode.ENABLE,
       annotationEditorMode: pdfjsLib.AnnotationEditorType.DISABLE,
       enableAutoLinking: false,
+      imageResourcesPath: `${PDFJS_ASSETS}images/`,
     });
     linkService.setViewer(viewer);
     eventBus.on('pagesinit', () => {
@@ -272,6 +276,11 @@ export function DocumentView({
           <Icon name="close" />
         </button>
       </div>
+      {changed && (
+        <p className="sf-banner" data-testid="pages-banner">
+          This shows the file as it was opened. Your changes on the Pages screen go into the new file when you save.
+        </p>
+      )}
       <div className="sf-document-body">
         {showThumbs && <Thumbnails pdf={pdf} currentPage={page} onSelect={goTo} />}
         <div className="sf-viewer-frame">

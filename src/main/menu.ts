@@ -8,6 +8,7 @@ export function buildMenu(win: BrowserWindow): void {
       label: '&File',
       submenu: [
         { label: '&Open…', accelerator: 'CmdOrCtrl+O', click: send('open') },
+        { label: '&Save as new file…', accelerator: 'CmdOrCtrl+S', click: send('save') },
         { label: '&Close document', accelerator: 'CmdOrCtrl+W', click: send('close-document') },
         { type: 'separator' },
         { label: '&Settings', click: send('show-settings') },
@@ -33,6 +34,7 @@ export function buildMenu(win: BrowserWindow): void {
         { label: 'Fit &page', accelerator: 'CmdOrCtrl+9', click: send('zoom-fit-page') },
         { type: 'separator' },
         { label: '&Thumbnails', accelerator: 'CmdOrCtrl+T', click: send('toggle-thumbnails') },
+        { label: '&Pages', accelerator: 'CmdOrCtrl+Shift+P', click: send('show-pages') },
       ],
     },
     {

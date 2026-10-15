@@ -1,16 +1,19 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import type { AppInfo, MenuCommand, OpenResult, RecentFile, SettingsChange } from '../../shared/api';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import type { AppInfo, MenuCommand, OpenedFile, OpenResult, RecentFile, SettingsChange } from '../../shared/api';
 import type { Settings as AppSettings } from '../../shared/settings';
 import { applyAppearance, onSystemThemeChange } from './appearance';
 import { Dialog } from './components/Dialog';
 import { Icon, type IconName } from './components/Icon';
+import { editReducer, emptyEdit, hasChanges, newKey, type Tile } from './pages/editState';
+import { PagesView } from './pages/PagesView';
+import type { ConfirmRequest, SourceDoc } from './pages/sources';
 import { About } from './screens/About';
 import { Settings } from './screens/Settings';
 import { Start } from './screens/Start';
 import { DocumentView } from './viewer/DocumentView';
 import { loadDocument, OpenError, type PdfDocument } from './viewer/pdfjs';
 
-type Screen = 'start' | 'document' | 'settings' | 'about';
+type Screen = 'start' | 'document' | 'pages' | 'settings' | 'about';
 
 interface OpenDocument {
   /** Each opened document gets a fresh viewer. */
@@ -18,6 +21,9 @@ interface OpenDocument {
   pdf: PdfDocument;
   name: string;
   path: string;
+  bytes: Uint8Array;
+  /** Only for password-protected files; in memory while the document is open, never stored. */
+  password?: string;
 }
 
 interface PasswordRequest {
@@ -43,19 +49,33 @@ function openFailureMessage(result: Exclude<OpenResult, { ok: true } | { reason:
   }
 }
 
+function pageTiles(sourceId: string, count: number): Tile[] {
+  return Array.from({ length: count }, (_, i) => ({ key: newKey(sourceId), item: { kind: 'page', source: sourceId, index: i, rotate: 0 } }));
+}
+
 export function App() {
   const [info, setInfo] = useState<AppInfo | null>(null);
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [recent, setRecent] = useState<RecentFile[]>([]);
   const [screen, setScreen] = useState<Screen>('start');
   const [doc, setDoc] = useState<OpenDocument | null>(null);
+  const [added, setAdded] = useState<SourceDoc[]>([]);
+  const [edit, dispatch] = useReducer(editReducer, emptyEdit);
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [password, setPassword] = useState<PasswordRequest | null>(null);
+  const [confirming, setConfirming] = useState<(ConfirmRequest & { resolve: (ok: boolean) => void }) | null>(null);
   const [link, setLink] = useState<string | null>(null);
   const [command, setCommand] = useState<{ name: MenuCommand; seq: number } | null>(null);
+  const [saveNow, setSaveNow] = useState(false);
   const docRef = useRef<OpenDocument | null>(null);
   docRef.current = doc;
+  const addedRef = useRef<SourceDoc[]>([]);
+  addedRef.current = added;
+  const editRef = useRef(edit);
+  editRef.current = edit;
+  const nextDocId = useRef(0);
+  const nextSourceId = useRef(0);
 
   useEffect(() => {
     void Promise.all([api.appInfo(), api.getSettings(), api.recentFiles()]).then(([i, s, r]) => {
@@ -72,62 +92,112 @@ export function App() {
     return onSystemThemeChange(() => applyAppearance(settings));
   }, [settings]);
 
+  // Closing the window asks first while page changes aren't saved.
+  const dirty = hasChanges(edit);
+  useEffect(() => api.setUnsaved(dirty), [dirty]);
+
   const changeSettings = useCallback(async (change: SettingsChange) => {
     setSettings(await api.changeSettings(change));
     setRecent(await api.recentFiles());
   }, []);
 
-  const nextDocId = useRef(0);
+  const confirm = useCallback(
+    (request: ConfirmRequest) => new Promise<boolean>((resolve) => setConfirming({ ...request, resolve })),
+    [],
+  );
 
-  /** Frees a document after its viewer has been cleared away. */
-  const release = (old: OpenDocument | null) => {
-    if (old) window.setTimeout(() => void old.pdf.loadingTask.destroy(), 0);
+  /** Runs `action` now, or after the person agrees to lose unsaved page changes. */
+  const unlessUnsaved = useCallback(
+    async (action: () => void | Promise<void>) => {
+      if (hasChanges(editRef.current)) {
+        const ok = await confirm({
+          title: 'Discard your page changes?',
+          message: "You have page changes that aren't saved yet. If you continue, they are lost.",
+          confirmLabel: 'Discard changes',
+          cancelLabel: 'Keep editing',
+        });
+        if (!ok) return;
+      }
+      await action();
+    },
+    [confirm],
+  );
+
+  const askPassword = (name: string) => {
+    let asks = 0;
+    return (retry: boolean) => new Promise<string | null>((resolve) => setPassword({ id: ++asks, name, retry, resolve }));
+  };
+
+  /** Frees documents after their viewers have been cleared away. */
+  const release = (docs: (PdfDocument | undefined)[]) => {
+    window.setTimeout(() => docs.forEach((d) => void d?.loadingTask.destroy()), 0);
   };
 
   const closeDocument = useCallback(() => {
     const current = docRef.current;
+    const extra = addedRef.current;
     setDoc(null);
+    setAdded([]);
+    dispatch({ type: 'reset', tiles: [] });
     setScreen('start');
-    release(current);
+    release([current?.pdf, ...extra.map((s) => s.pdf)]);
   }, []);
 
-  const handleResult = useCallback(
-    async (result: OpenResult) => {
-      setRecent(await api.recentFiles());
-      if (!result.ok) {
-        if (result.reason !== 'cancelled') setMessage(openFailureMessage(result));
-        return;
+  const handleResult = useCallback(async (result: OpenResult) => {
+    setRecent(await api.recentFiles());
+    if (!result.ok) {
+      if (result.reason !== 'cancelled') setMessage(openFailureMessage(result));
+      return;
+    }
+    const { file } = result;
+    setBusy(`Opening ${file.name}…`);
+    try {
+      const { pdf, password: used } = await loadDocument(file.bytes, askPassword(file.name));
+      const previous = docRef.current;
+      const extra = addedRef.current;
+      const id = ++nextDocId.current;
+      setDoc({ id, pdf, name: file.name, path: file.path, bytes: file.bytes, password: used });
+      setAdded([]);
+      dispatch({ type: 'reset', tiles: pageTiles(`doc${id}`, pdf.numPages) });
+      setScreen('document');
+      release([previous?.pdf, ...extra.map((s) => s.pdf)]);
+    } catch (error) {
+      const kind = error instanceof OpenError ? error.kind : 'unreadable';
+      if (kind === 'damaged') {
+        setMessage(`ScribeForge couldn't open ${file.name}. The file may be damaged, or it may not really be a PDF.`);
+      } else if (kind === 'unreadable') {
+        setMessage(`ScribeForge couldn't open ${file.name}. Something in the file couldn't be read.`);
       }
-      const { file } = result;
-      setMessage(null);
-      setBusy(`Opening ${file.name}…`);
-      try {
-        let asks = 0;
-        const pdf = await loadDocument(
-          file.bytes,
-          (retry) => new Promise((resolve) => setPassword({ id: ++asks, name: file.name, retry, resolve })),
-        );
-        const previous = docRef.current;
-        setDoc({ id: ++nextDocId.current, pdf, name: file.name, path: file.path });
-        setScreen('document');
-        release(previous);
-      } catch (error) {
-        const kind = error instanceof OpenError ? error.kind : 'unreadable';
-        if (kind === 'damaged') {
-          setMessage(`ScribeForge couldn't open ${file.name}. The file may be damaged, or it may not really be a PDF.`);
-        } else if (kind === 'unreadable') {
-          setMessage(`ScribeForge couldn't open ${file.name}. Something in the file couldn't be read.`);
-        }
-      } finally {
-        setPassword(null);
-        setBusy(null);
-      }
-    },
-    [],
-  );
+    } finally {
+      setPassword(null);
+      setBusy(null);
+    }
+  }, []);
 
-  const openWithDialog = useCallback(async () => handleResult(await api.openDialog()), [handleResult]);
-  const openPath = useCallback(async (path: string) => handleResult(await api.openPath(path)), [handleResult]);
+  const openWithDialog = useCallback(() => unlessUnsaved(async () => handleResult(await api.openDialog())), [handleResult, unlessUnsaved]);
+  const openPath = useCallback((path: string) => unlessUnsaved(async () => handleResult(await api.openPath(path))), [handleResult, unlessUnsaved]);
+  const closeWithCheck = useCallback(() => unlessUnsaved(closeDocument), [closeDocument, unlessUnsaved]);
+
+  /** Files added on the Pages screen become extra sources (asking for passwords as needed). */
+  const addFiles = useCallback(async (files: OpenedFile[]): Promise<SourceDoc[]> => {
+    const loaded: SourceDoc[] = [];
+    try {
+      for (const file of files) {
+        try {
+          const { pdf, password: used } = await loadDocument(file.bytes, askPassword(file.name));
+          loaded.push({ id: `add${++nextSourceId.current}`, name: file.name, path: file.path, bytes: file.bytes, password: used, pdf });
+        } catch (error) {
+          if (!(error instanceof OpenError && error.kind === 'cancelled')) {
+            setMessage(`${file.name} couldn't be added. The file may be damaged, or it may not really be a PDF.`);
+          }
+        }
+      }
+    } finally {
+      setPassword(null);
+    }
+    setAdded((current) => [...current, ...loaded]);
+    return loaded;
+  }, []);
 
   // Menu commands from the main process.
   useEffect(() => {
@@ -138,13 +208,22 @@ export function App() {
           void openWithDialog();
           break;
         case 'close-document':
-          closeDocument();
+          void closeWithCheck();
           break;
         case 'show-settings':
           setScreen('settings');
           break;
         case 'show-about':
           setScreen('about');
+          break;
+        case 'show-pages':
+          if (docRef.current) setScreen('pages');
+          break;
+        case 'save':
+          if (docRef.current) {
+            setScreen('pages');
+            setSaveNow(true);
+          }
           break;
         default:
           if (docRef.current) {
@@ -153,9 +232,10 @@ export function App() {
           }
       }
     });
-  }, [openWithDialog, closeDocument]);
+  }, [openWithDialog, closeWithCheck]);
 
   // Dragging a PDF onto the window opens it. Nothing dropped ever navigates the window.
+  // (On the Pages screen, a dropped PDF is added to the document instead.)
   useEffect(() => {
     const over = (e: DragEvent) => e.preventDefault();
     const drop = (e: DragEvent) => {
@@ -174,11 +254,17 @@ export function App() {
     };
   }, [openPath]);
 
+  const sources: SourceDoc[] = useMemo(
+    () => (doc ? [{ id: `doc${doc.id}`, name: doc.name, path: doc.path, bytes: doc.bytes, password: doc.password, pdf: doc.pdf }, ...added] : []),
+    [doc, added],
+  );
+
   if (!settings || !info) return null;
 
   const nav: { id: Screen; label: string; icon: IconName; disabled?: boolean }[] = [
     { id: 'start', label: 'Start', icon: 'open' },
     { id: 'document', label: 'Document', icon: 'document', disabled: !doc },
+    { id: 'pages', label: 'Pages', icon: 'pages', disabled: !doc },
     { id: 'settings', label: 'Settings', icon: 'settings' },
     { id: 'about', label: 'About', icon: 'about' },
   ];
@@ -204,6 +290,7 @@ export function App() {
               >
                 <Icon name={item.icon} />
                 {item.label}
+                {item.id === 'pages' && dirty && <span className="sf-dot" aria-hidden="true" title="Changes not saved yet" />}
               </button>
             </li>
           ))}
@@ -218,7 +305,11 @@ export function App() {
       <main className="sf-main">
         {message && (
           <div className="sf-message" role="status" data-testid="message">
-            <p>{message}</p>
+            <div>
+              {message.split('\n').map((line, i) => (
+                <p key={i}>{line}</p>
+              ))}
+            </div>
             <button type="button" className="sf-icon-button" aria-label="Dismiss message" onClick={() => setMessage(null)}>
               <Icon name="close" size={18} />
             </button>
@@ -245,12 +336,26 @@ export function App() {
               key={doc.id}
               pdf={doc.pdf}
               name={doc.name}
+              changed={dirty}
               command={command}
               onAskLink={setLink}
               onRefusedLink={(address) => setMessage(`This link can't be opened from ScribeForge: ${address}`)}
-              onClose={closeDocument}
+              onClose={() => void closeWithCheck()}
             />
           </div>
+        )}
+        {doc && screen === 'pages' && (
+          <PagesView
+            edit={edit}
+            dispatch={dispatch}
+            sources={sources}
+            saveNow={saveNow}
+            onSaveStarted={() => setSaveNow(false)}
+            addFiles={addFiles}
+            confirm={confirm}
+            onMessage={setMessage}
+            onSaved={(path) => void api.openPath(path).then(handleResult)}
+          />
         )}
         {screen === 'settings' && (
           <Settings
@@ -268,6 +373,40 @@ export function App() {
       </main>
 
       {password && <PasswordDialog key={password.id} request={password} />}
+      {confirming && (
+        <Dialog
+          title={confirming.title}
+          onCancel={() => {
+            confirming.resolve(false);
+            setConfirming(null);
+          }}
+          testId="confirm-dialog"
+        >
+          <p>{confirming.message}</p>
+          <div className="sf-dialog-buttons">
+            <button
+              type="button"
+              className="sf-button"
+              onClick={() => {
+                confirming.resolve(false);
+                setConfirming(null);
+              }}
+            >
+              {confirming.cancelLabel ?? 'Cancel'}
+            </button>
+            <button
+              type="button"
+              className="sf-button sf-primary"
+              onClick={() => {
+                confirming.resolve(true);
+                setConfirming(null);
+              }}
+            >
+              {confirming.confirmLabel}
+            </button>
+          </div>
+        </Dialog>
+      )}
       {link && (
         <Dialog title="Open this link in your web browser?" onCancel={() => setLink(null)} testId="link-dialog">
           <p>This link in the document goes to:</p>

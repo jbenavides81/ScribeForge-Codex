@@ -28,8 +28,27 @@ export interface AppInfo {
 
 export type SettingsChange = Partial<{ theme: ThemeId; textSize: TextSize; rememberRecent: boolean }>;
 
+export interface SaveRequest {
+  bytes: Uint8Array;
+  suggestedName: string;
+  /** The files the pages came from: the dialog starts in their folder, and replacing one asks first. */
+  sourcePaths: string[];
+}
+
+export type SaveResult = { ok: true; path: string } | { ok: false; reason: 'cancelled' | 'failed'; message?: string };
+
+export interface SaveManyRequest {
+  files: { name: string; bytes: Uint8Array }[];
+  sourcePaths: string[];
+}
+
+export type SaveManyResult =
+  | { ok: true; folder: string; paths: string[] }
+  | { ok: false; reason: 'cancelled' | 'failed'; message?: string };
+
 export type MenuCommand =
   | 'open'
+  | 'save'
   | 'close-document'
   | 'zoom-in'
   | 'zoom-out'
@@ -37,6 +56,7 @@ export type MenuCommand =
   | 'zoom-fit-page'
   | 'find'
   | 'toggle-thumbnails'
+  | 'show-pages'
   | 'show-settings'
   | 'show-about';
 
@@ -47,6 +67,12 @@ export interface ScribeForgeApi {
   changeSettings(change: SettingsChange): Promise<Settings>;
   openDialog(): Promise<OpenResult>;
   openPath(path: string): Promise<OpenResult>;
+  /** Choose several PDFs to add (merge). An empty list if cancelled. */
+  openMany(): Promise<OpenResult[]>;
+  saveFile(request: SaveRequest): Promise<SaveResult>;
+  saveFiles(request: SaveManyRequest): Promise<SaveManyResult>;
+  /** Tells the app there are page changes not saved yet, so closing the window asks first. */
+  setUnsaved(unsaved: boolean): void;
   pathForFile(file: File): string;
   recentFiles(): Promise<RecentFile[]>;
   removeRecent(path: string): Promise<RecentFile[]>;

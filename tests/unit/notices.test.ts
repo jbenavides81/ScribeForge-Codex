@@ -4,7 +4,20 @@ import { describe, expect, it } from 'vitest';
 
 const ROOT = path.resolve(import.meta.dirname, '../..');
 // Every package whose code or files ship in the app. Keep in step with scripts/make-notices.mjs.
-const SHIPPED = ['electron', 'react', 'react-dom', 'scheduler', 'pdfjs-dist', 'inter-ui'];
+const SHIPPED = [
+  'electron',
+  'react',
+  'react-dom',
+  'scheduler',
+  'pdfjs-dist',
+  'inter-ui',
+  '@cantoo/pdf-lib',
+  'fflate',
+  'tslib',
+  'culori',
+  'html-entities',
+  'node-html-better-parser',
+];
 
 describe('third-party notices', () => {
   const notices = readFileSync(path.join(ROOT, 'THIRD-PARTY-NOTICES.md'), 'utf8');

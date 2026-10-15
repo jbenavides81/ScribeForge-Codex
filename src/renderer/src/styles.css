@@ -335,6 +335,81 @@ input[type='checkbox']:checked::before {
 /* An outline, not a border: a border would make "Fit width" pages 2px too wide. */
 .sf-viewer-container .pdfViewer .page { margin: 1rem auto; outline: 1px solid var(--sf-outline); }
 
+.sf-banner {
+  flex: none;
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  background: var(--sf-raised);
+  border-bottom: 1px solid var(--sf-accent);
+}
+
+/* ---------- pages ---------- */
+
+.sf-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  margin-left: auto;
+  border-radius: 50%;
+  background: var(--sf-accent);
+}
+
+.sf-pages { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.sf-pages-toolbar { row-gap: 0.35rem; }
+.sf-tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 2.25rem;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--sf-text);
+  cursor: pointer;
+}
+.sf-tool:hover:not(:disabled) { border-color: var(--sf-outline); }
+.sf-tool:disabled { color: var(--sf-muted); cursor: default; }
+.sf-pages-status { flex: none; margin: 0; padding: 0.4rem 1rem; color: var(--sf-muted); border-bottom: 1px solid var(--sf-line); }
+
+.sf-page-grid {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  margin: 0;
+  padding: 1rem;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  align-content: start;
+  gap: 1rem;
+  background: var(--sf-page-back);
+}
+.sf-page-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.6rem;
+  border: 2px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+.sf-page-tile:hover { border-color: var(--sf-outline); }
+.sf-page-tile[aria-selected='true'] { border-color: var(--sf-link); background: var(--sf-raised); }
+.sf-page-tile[data-drop='before'] { border-left: 4px solid var(--sf-accent); }
+.sf-page-tile[data-drop='after'] { border-right: 4px solid var(--sf-accent); }
+.sf-page-frame { display: flex; align-items: center; justify-content: center; width: 150px; height: 150px; }
+.sf-page-canvas { display: block; width: 116px; height: 150px; outline: 1px solid var(--sf-outline); background: var(--sf-panel); }
+.sf-page-canvas[data-rendered] { width: auto; height: auto; }
+.sf-page-blank { display: block; background: var(--sf-panel); outline: 1px solid var(--sf-outline); }
+.sf-page-number { font-weight: 600; font-variant-numeric: tabular-nums; }
+.sf-page-detail { color: var(--sf-muted); font-size: 0.875rem; text-align: center; overflow-wrap: anywhere; }
+
+.sf-split-choices { margin: 0.75rem 0; padding: 0; border: 0; display: flex; flex-direction: column; gap: 0.15rem; }
+.sf-small-input { width: 4rem; text-align: right; }
+.sf-wide-input { width: 100%; margin: 0 0 0.25rem; }
+
 /* ---------- dialogs ---------- */
 
 .sf-scrim {

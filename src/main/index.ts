@@ -1,12 +1,13 @@
 import { isTrial, dataDir } from './paths';
-import { app, BrowserWindow, ipcMain, nativeTheme, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell } from 'electron';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import type { AppInfo, SettingsChange } from '../shared/api';
 import { isOpenableLink } from '../shared/links';
 import { applyChange } from '../shared/settings';
 import { presetFor } from '../shared/themes';
-import { clearRecent, forgetRecent, openPath, openWithDialog, recentFiles } from './files';
+import { clearRecent, forgetRecent, openManyWithDialog, openPath, openWithDialog, recentFiles } from './files';
+import { saveManyWithDialog, saveWithDialog } from './save';
 import { buildMenu } from './menu';
 import { APP_ORIGIN, blockNetwork, registerAppScheme, serveApp } from './network';
 import { isTestWindow, placeAndShow } from './placement';
@@ -18,6 +19,8 @@ const devServer = process.env.ELECTRON_RENDERER_URL;
 
 let store: SettingsStore;
 let mainWindow: BrowserWindow | null = null;
+/** Page changes not saved yet: closing the window asks first. */
+let unsaved = false;
 
 function createWindow(): BrowserWindow {
   const settings = store.get();
@@ -45,6 +48,28 @@ function createWindow(): BrowserWindow {
 
   // Keep "ScribeForge (trial)" in the title bar; the page's own title would replace it.
   win.on('page-title-updated', (event) => event.preventDefault());
+
+  win.on('close', (event) => {
+    if (!unsaved) return;
+    event.preventDefault();
+    void dialog
+      .showMessageBox(win, {
+        type: 'warning',
+        title: 'Unsaved page changes',
+        message: 'You have page changes that aren\'t saved yet.',
+        detail: 'If you close ScribeForge now, they are lost. To keep them, choose Keep editing, then Save as new file.',
+        buttons: ['Close without saving', 'Keep editing'],
+        defaultId: 1,
+        cancelId: 1,
+        noLink: true,
+      })
+      .then(({ response }) => {
+        if (response === 0) {
+          unsaved = false;
+          win.close();
+        }
+      });
+  });
 
   // The window only ever shows ScribeForge's own screens.
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
@@ -81,6 +106,12 @@ function registerHandlers(): void {
   });
   ipcMain.handle('file:open-dialog', () => openWithDialog(win(), store));
   ipcMain.handle('file:open-path', (_e, filePath: string) => openPath(filePath, store));
+  ipcMain.handle('file:open-many', () => openManyWithDialog(win(), store));
+  ipcMain.handle('file:save', (_e, request) => saveWithDialog(win(), request));
+  ipcMain.handle('file:save-many', (_e, request) => saveManyWithDialog(win(), request));
+  ipcMain.on('doc:unsaved', (_e, value: unknown) => {
+    unsaved = value === true;
+  });
   ipcMain.handle('recent:list', () => recentFiles(store));
   ipcMain.handle('recent:remove', (_e, filePath: string) => forgetRecent(store, filePath));
   ipcMain.handle('recent:clear', () => clearRecent(store));

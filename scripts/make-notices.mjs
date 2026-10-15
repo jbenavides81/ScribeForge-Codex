@@ -11,6 +11,12 @@ export const SHIPPED = [
   { name: 'react-dom', what: 'Screens' },
   { name: 'scheduler', what: 'Used by React' },
   { name: 'pdfjs-dist', what: 'Viewing, text, search (pdf.js)' },
+  { name: '@cantoo/pdf-lib', what: 'The page tools: building new PDFs (a maintained fork of pdf-lib)' },
+  { name: 'fflate', what: 'Compression, used by pdf-lib' },
+  { name: 'tslib', what: 'Used by pdf-lib' },
+  { name: 'culori', what: 'Colour handling, used by pdf-lib' },
+  { name: 'html-entities', what: 'Used by pdf-lib' },
+  { name: 'node-html-better-parser', what: 'Used by pdf-lib' },
   { name: 'inter-ui', what: 'The Inter font' },
 ];
 

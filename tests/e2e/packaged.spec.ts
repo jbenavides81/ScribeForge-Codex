@@ -1,10 +1,14 @@
 // The installed app (the unpacked installer build in release/win-unpacked): the same safety
 // checks as the development build, on the files that actually ship.
 import { expect, test } from '@playwright/test';
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { findEverywhere, pageIds, strayPages } from '../unit/support/inspect';
 import {
+  answerDialogs,
   blockedRequests,
+  closeApp,
   fixtureHashes,
   goTo,
   launch,
@@ -13,6 +17,7 @@ import {
   PACKAGED_EXE,
   recordOpenedLinks,
   setTheme,
+  VERSION,
   waitForFirstPage,
 } from './helpers';
 
@@ -29,7 +34,7 @@ test('the installed app opens PDFs, keeps PDF JavaScript off and makes no networ
   });
 
   await goTo(win, 'About');
-  await expect(win.getByTestId('about-version')).toHaveText('Version 0.1.0');
+  await expect(win.getByTestId('about-version')).toHaveText(`Version ${VERSION}`);
 
   await openFixture(run, 'large.pdf');
   await waitForFirstPage(win);
@@ -56,6 +61,37 @@ test('the installed app opens PDFs, keeps PDF JavaScript off and makes no networ
   expect(await openedLinks(app)).toEqual([]);
   expect(await blockedRequests(app)).toEqual([]);
   await app.close();
+  expect(fixtureHashes()).toEqual(before);
+});
+
+test('the installed app\'s page tools build, save and split files', async ({}, info) => {
+  test.skip(!existsSync(PACKAGED_EXE), 'Run "npm run pack" first.');
+  const before = fixtureHashes();
+  const run = await launch(info.project.name);
+  const { app, win } = run;
+  await openFixture(run, 'links.pdf');
+  await waitForFirstPage(win);
+  await goTo(win, 'Pages');
+  await win.getByRole('option', { name: /^Page 1(,|$)/ }).click();
+  await win.getByRole('button', { name: 'Rotate right' }).click();
+  await win.getByRole('option', { name: /^Page 6(,|$)/ }).click();
+  await win.getByRole('button', { name: 'Delete' }).click();
+  const out = mkdtempSync(path.join(tmpdir(), 'scribeforge-e2e-out-'));
+  await answerDialogs(app, { saveAs: path.join(out, 'edited.pdf') });
+  await win.getByRole('button', { name: 'Save as new file…' }).click();
+  await expect(win.getByTestId('message')).toContainText('Saved edited.pdf (5 pages).');
+  const bytes = new Uint8Array(readFileSync(path.join(out, 'edited.pdf')));
+  expect(await pageIds(bytes)).toEqual([1, 2, 3, 4, 5].map((n) => `UNIQUE-PAGE-${n}`));
+  expect(await findEverywhere(bytes, 'UNIQUE-PAGE-6')).toEqual([]);
+  expect(await strayPages(bytes)).toBe(0);
+
+  await goTo(win, 'Pages');
+  await win.getByRole('button', { name: 'Split…' }).click();
+  await answerDialogs(app, { folder: out });
+  await win.getByTestId('split-dialog').getByRole('button', { name: 'Choose a folder and split' }).click();
+  await expect(win.getByTestId('message')).toContainText('Split into 3 files');
+  expect(await blockedRequests(app)).toEqual([]);
+  await closeApp(app);
   expect(fixtureHashes()).toEqual(before);
 });
 

@@ -4,7 +4,7 @@ An open-source, offline PDF toolkit for Windows: view, organise, annotate, inspe
 
 ScribeForge never sends anything over the network, and it never changes the files you open: edits save to new files.
 
-**Status:** stop 1a (the app and the viewer) is built: open, view, search and copy from PDFs, with themes and settings. Version 0.1.0.
+**Status:** stops 1a and 1b are built. You can open, view, search and copy from PDFs, and on the Pages screen merge, split, reorder, rotate, delete, extract and insert blank pages, always saving to a new file. Version 0.2.0.
 
 | Document | What it is |
 |---|---|
@@ -58,7 +58,7 @@ npm run trial:reset
 | `npm run notices` | Rebuilds `THIRD-PARTY-NOTICES.md` from the installed packages |
 | `npm run icons` | Redraws `build/icon.png` from the icon draft |
 
-**While the whole-app tests run,** test windows open on your left-most monitor and never take keyboard focus, so you can keep working on another screen. Each test uses its own throwaway data folder in the Windows temp folder, removed when the run finishes. Screenshots of every screen in every theme go to `test-results\screens\1a`, with a `contact-sheet.png`.
+**While the whole-app tests run,** test windows open on your left-most monitor and never take keyboard focus, so you can keep working on another screen. Each test uses its own throwaway data folder in the Windows temp folder, removed when the run finishes. Screenshots of every screen in every theme go to `test-results\screens`, with a `contact-sheet.png`.
 
 **The installer is unsigned,** so Windows shows "Windows protected your PC" the first time. Click **More info**, then **Run anyway**.
 
@@ -68,7 +68,8 @@ npm run trial:reset
 |---|---|
 | `src/main/` | The app process: window, menus, file dialogs, reading files, settings, the network guard |
 | `src/preload/` | The small bridge the screens are allowed to call |
-| `src/renderer/` | The screens (React), styles, and the pdf.js viewer |
+| `src/renderer/` | The screens (React), styles, the pdf.js viewer, and the Pages screen with its worker |
+| `src/engine/` | The PDF engine for the page tools: plain TypeScript, run in a worker inside the window and in the unit tests |
 | `src/shared/` | Code used by both sides: themes (the only place colours are defined), settings rules, link rules, pdf.js safety options |
 | `tests/unit/` | Unit tests (Vitest) |
 | `tests/e2e/` | Whole-app tests (Playwright), for the built app and the installed app |
@@ -81,7 +82,12 @@ npm run trial:reset
 - **PDF JavaScript never runs.** pdf.js's scripting sandbox isn't included, and a test PDF that tries a dialog, a web request and opening a link proves nothing happens.
 - **Your files aren't changed.** Opening only reads. Tests compare checksums before and after.
 - **Web links in a PDF** show their address and ask before opening in your browser. Only `http`, `https` and `mailto` links can be opened.
-- **Passwords** for protected PDFs are never stored.
+- **Passwords** for protected PDFs are never stored. Saving pages from a protected file warns first that the new file will have no password.
+- **Page tools always build a brand-new file.**
+    - Deleted or left-out pages can't hide inside it: links are re-pointed before copying, and leftovers are swept out before saving.
+    - Links and bookmarks point at the right pages of the new file, or are left out if their page isn't there.
+    - Scripts and other actions in the pages are removed.
+    - Saving over the original asks a second, plain question first.
 
 ## Interim parts, to match BC6 later
 

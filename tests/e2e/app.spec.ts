@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { PRESETS } from '../../src/shared/themes';
-import { blockedRequests, goTo, launch, openFixture, setTheme, waitForFirstPage } from './helpers';
+import { blockedRequests, goTo, launch, openFixture, setTheme, waitForFirstPage, VERSION } from './helpers';
 
 test('starts on the Start screen, shows About, and makes no network requests', async ({}, info) => {
   const run = await launch(info.project.name);
@@ -13,7 +13,7 @@ test('starts on the Start screen, shows About, and makes no network requests', a
   // Drag-and-drop needs the file's path from the sandboxed window; the bridge for it works.
   expect(await win.evaluate(() => typeof window.scribeforge.pathForFile(new File(['x'], 'dropped.pdf')))).toBe('string');
   await goTo(win, 'About');
-  await expect(win.getByTestId('about-version')).toHaveText('Version 0.1.0');
+  await expect(win.getByTestId('about-version')).toHaveText(`Version ${VERSION}`);
   await expect(win.getByText('by BC6')).toBeVisible();
   await win.getByText('Third-party notices', { exact: true }).click();
   await expect(win.getByTestId('notices')).toContainText('pdfjs-dist 6.4.299');
@@ -125,7 +125,7 @@ test('trial mode says so in the title bar and the navigation', async ({}, info) 
   await expect(win.getByTestId('trial-badge')).toHaveText('Trial mode: separate test data');
   expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getTitle())).toBe('ScribeForge (trial)');
   await goTo(win, 'About');
-  await expect(win.getByTestId('about-version')).toHaveText('Version 0.1.0 (trial mode)');
+  await expect(win.getByTestId('about-version')).toHaveText(`Version ${VERSION} (trial mode)`);
   expect(path.resolve(await app.evaluate(({ app: a }) => a.getPath('userData')))).toBe(path.resolve(userData));
   await app.close();
 });

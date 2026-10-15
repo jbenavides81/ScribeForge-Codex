@@ -39,6 +39,18 @@ test('opens a PDF with page count, pages and thumbnails', async ({}, info) => {
   await app.close();
 });
 
+test('comment icons in documents show (not as broken images)', async ({}, info) => {
+  const run = await launch(info.project.name);
+  const { app, win } = run;
+  await openFixture(run, 'links.pdf');
+  await waitForFirstPage(win);
+  const icon = win.locator('.page[data-page-number="1"] .annotationLayer img').first();
+  await icon.waitFor({ state: 'attached' });
+  await expect.poll(() => icon.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)).toBe(true);
+  expect(await blockedRequests(app)).toEqual([]);
+  await app.close();
+});
+
 test('opening another file replaces the first one completely', async ({}, info) => {
   const run = await launch(info.project.name);
   const { app, win } = run;

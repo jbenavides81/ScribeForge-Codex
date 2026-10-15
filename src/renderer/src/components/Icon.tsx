@@ -14,7 +14,18 @@ export type IconName =
   | 'thumbnails'
   | 'search'
   | 'close'
-  | 'remove';
+  | 'remove'
+  | 'pages'
+  | 'rotate-left'
+  | 'rotate-right'
+  | 'delete'
+  | 'undo'
+  | 'redo'
+  | 'add'
+  | 'blank'
+  | 'extract'
+  | 'split'
+  | 'save';
 
 const PATHS: Record<IconName, string[]> = {
   logo: [
@@ -37,6 +48,17 @@ const PATHS: Record<IconName, string[]> = {
   search: ['M28 8 a20 20 0 1 0 0.01 0 Z', 'M42 42 L58 58'],
   close: ['M14 14 L50 50', 'M50 14 L14 50'],
   remove: ['M14 14 L50 50', 'M50 14 L14 50'],
+  pages: ['M8 8 H28 V28 H8 Z', 'M36 8 H56 V28 H36 Z', 'M8 36 H28 V56 H8 Z', 'M36 36 H56 V56 H36 Z'],
+  'rotate-left': ['M14 34 A20 20 0 1 0 22 18', 'M22 6 V18 H10'],
+  'rotate-right': ['M50 34 A20 20 0 1 1 42 18', 'M42 6 V18 H54'],
+  delete: ['M10 16 H54', 'M24 16 V9 H40 V16', 'M16 16 L19 56 H45 L48 16', 'M27 26 V46', 'M37 26 V46'],
+  undo: ['M14 24 H40 A14 14 0 0 1 40 52 H22', 'M24 12 L12 24 L24 36'],
+  redo: ['M50 24 H24 A14 14 0 0 0 24 52 H42', 'M40 12 L52 24 L40 36'],
+  add: ['M16 6 H38 L50 18 V58 H16 Z', 'M38 6 V18 H50', 'M33 28 V48', 'M23 38 H43'],
+  blank: ['M16 6 H38 L50 18 V58 H16 Z', 'M38 6 V18 H50'],
+  extract: ['M16 6 H38 L50 18 V58 H16 Z', 'M38 6 V18 H50', 'M33 48 V26', 'M24 35 L33 26 L42 35'],
+  split: ['M8 8 H26 V56 H8 Z', 'M38 8 H56 V56 H38 Z', 'M32 4 V60'],
+  save: ['M10 8 H46 L56 18 V56 H10 Z', 'M20 8 V22 H42 V8', 'M20 56 V36 H44 V56'],
 };
 
 export function Icon({ name, size = 20 }: { name: IconName; size?: number }) {

@@ -24,14 +24,17 @@ export class OpenError extends Error {
 /**
  * Opens a document's bytes with ScribeForge's safe settings. `askPassword` is called when the
  * file is password-protected (again, with `retry` true, after a wrong password). It returns
- * null if the person cancels. Passwords are never stored.
+ * null if the person cancels. The password that worked comes back with the document, kept in
+ * memory only, so the page tools can open the same file; it is never stored.
  */
 export async function loadDocument(
   bytes: Uint8Array,
   askPassword: (retry: boolean) => Promise<string | null>,
-): Promise<PdfDocument> {
-  const task = pdfjsLib.getDocument(safeDocumentOptions(bytes, PDFJS_ASSETS));
+): Promise<{ pdf: PdfDocument; password?: string }> {
+  // pdf.js takes over the bytes it's given, so it gets a copy and the original stays usable.
+  const task = pdfjsLib.getDocument(safeDocumentOptions(bytes.slice(), PDFJS_ASSETS));
   let cancelled = false;
+  let lastPassword: string | undefined;
   task.onPassword = (update: (password: string) => void, reason: number) => {
     const retry = reason === pdfjsLib.PasswordResponses.INCORRECT_PASSWORD;
     void askPassword(retry).then((password) => {
@@ -39,12 +42,13 @@ export async function loadDocument(
         cancelled = true;
         void task.destroy();
       } else {
+        lastPassword = password;
         update(password);
       }
     });
   };
   try {
-    return await task.promise;
+    return { pdf: await task.promise, password: lastPassword };
   } catch (error) {
     if (cancelled) throw new OpenError('cancelled');
     const name = (error as { name?: string })?.name;
