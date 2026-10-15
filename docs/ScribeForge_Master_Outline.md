@@ -1,6 +1,6 @@
 # ScribeForge: Master Outline (BC6 edition)
 
-_Approved 2026-10-13, with every recommendation in section 9 accepted. ScribeForge is built on the BC6 PC._
+_Approved 2026-10-13, with every recommendation in section 9 accepted. On 2026-10-15 the build PC changed from the BC6 PC to the owner's PC holding `source\repos` (decision 9)._
 
 This rewrites the Copilot outline so ScribeForge is built the way BC6 Business Manager is built: plan first, phases split into stops, an offline Windows app, and the same theme system and style rules. The build prompt (`docs/ScribeForge_Claude_Code_Prompt.md`) and the roadmap (`docs/Roadmap.md`) come from it.
 
@@ -218,7 +218,7 @@ Contributing rules:
 6. **CLI:** comes after the app works, as the first stop of Phase 2, reusing the same engine.
 7. **ForgeCloud:** dropped. Multi-device use means encrypted backups to a synced folder.
 8. **Saving:** edits save to a new file by default, and overwriting the original asks first. Redaction always saves a new file.
-9. **Computer:** ScribeForge is built on the BC6 PC, so Claude there copies BC6's theme tokens, style test and folder layout from the BC6 repo.
+9. **Computer:** first set to the BC6 PC. **Changed 2026-10-15:** ScribeForge is built on the owner's other PC, in `source\repos\ScribeForge-Codex`. BC6's theme tokens, style test and folder layout are copied once the BC6 repo can be reached from there (`docs/Phase0_Plan.md`, question 1).
 
 ---
 
@@ -238,5 +238,5 @@ These didn't load from the claude.ai session. They're in the BC6 repo's `docs/` 
 
 1. ~~Approve this outline and the section 9 decisions.~~ Done 2026-10-13.
 2. ~~Write the build prompt (`docs/ScribeForge_Claude_Code_Prompt.md`) and the roadmap (`docs/Roadmap.md`).~~ Done 2026-10-13.
-3. On the BC6 PC, Claude Code reads the build prompt, checks the BC6 repo, and writes `docs/Phase0_Plan.md` for your approval.
+3. ~~Write `docs/Phase0_Plan.md` for your approval.~~ Done 2026-10-15.
 4. After "go", stop 1a.

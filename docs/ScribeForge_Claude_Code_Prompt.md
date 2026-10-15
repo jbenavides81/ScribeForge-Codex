@@ -1,6 +1,6 @@
 # ScribeForge: Claude Code build prompt
 
-You are building **ScribeForge**, an open-source, offline PDF toolkit for Windows, in this repository (`ScribeForge-Codex`). It's a BC6 app, built the same way as BC6 Business Manager, which you'll find on this PC.
+You are building **ScribeForge**, an open-source, offline PDF toolkit for Windows, in this repository (`ScribeForge-Codex`). It's a BC6 app, built the same way as BC6 Business Manager. BC6 Business Manager lives on the owner's other PC, not the one ScribeForge is built on.
 
 Read this whole file before doing anything. Two companion documents:
 
@@ -15,7 +15,7 @@ If this prompt and the outline ever disagree, this prompt wins. If something her
 
 ScribeForge reuses BC6 Business Manager's process, look and test setup. Before writing the Phase 0 plan:
 
-1. **Find the BC6 Business Manager repo on this PC.** Ask the owner for the path if it isn't obvious.
+1. **Get read-only access to the BC6 Business Manager repo.** It lives on the owner's other PC. Once the owner pushes it to a private GitHub repo, clone it next to this one and never commit to it. Until then, mark everything that will come from it "to match BC6".
 2. **Read its build prompt and plans:** `BC6_App_Claude_Code_Prompt.md`, `docs/Phase0_Plan.md`, the README, and one or two `docs/manual-tests/` scripts, to learn their format.
 3. **Read the parts ScribeForge will reuse:**
    - the theme presets and colour tokens (all 7, plus High Contrast and Match system), and the three text sizes

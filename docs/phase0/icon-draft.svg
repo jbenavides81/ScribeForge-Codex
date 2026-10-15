@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+  <!-- anvil -->
+  <path d="M5 27 C 10 27 13 29 16 31 L16 35 C 20 35 24 37 25 41 L22 47 L17 49 L17 52 L47 52 L47 49 L42 47 L39 41 C 40 37 44 35 50 35 L57 35 L57 27 Z"/>
+  <!-- quill -->
+  <path d="M58 5 C 46 9 36 17 29 28 C 34 27 38 25 41 22 C 38 26 35 29 31 31 C 40 29 49 21 58 5 Z"/>
+  <path d="M29 28 L14 58"/>
+</svg>
