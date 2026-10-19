@@ -26,7 +26,7 @@ export interface AppInfo {
   settingsNotice: string | null;
 }
 
-export type SettingsChange = Partial<{ theme: ThemeId; textSize: TextSize; rememberRecent: boolean; authorName: string }>;
+export type SettingsChange = Partial<{ theme: ThemeId; textSize: TextSize; rememberRecent: boolean; authorName: string; reviewBeforeSave: boolean }>;
 
 export interface SaveRequest {
   bytes: Uint8Array;
@@ -57,6 +57,7 @@ export type MenuCommand =
   | 'find'
   | 'toggle-thumbnails'
   | 'show-pages'
+  | 'show-details'
   | 'show-settings'
   | 'show-about';
 

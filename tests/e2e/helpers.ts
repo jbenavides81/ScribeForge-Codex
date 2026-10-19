@@ -113,7 +113,7 @@ export async function blockedRequests(app: ElectronApplication): Promise<string[
   return app.evaluate(() => [...((globalThis as Record<string, unknown>).__scribeforgeBlocked as string[])]);
 }
 
-export async function goTo(win: Page, screen: 'Start' | 'Document' | 'Pages' | 'Settings' | 'About'): Promise<void> {
+export async function goTo(win: Page, screen: 'Start' | 'Document' | 'Pages' | 'Details' | 'Settings' | 'About'): Promise<void> {
   await win.getByRole('navigation', { name: 'Main' }).getByRole('button', { name: screen, exact: true }).click();
 }
 
@@ -122,6 +122,11 @@ export async function openFixture({ app, win }: Running, name: string): Promise<
   await chooseInOpenDialog(app, path.join(FIXTURES, name));
   await goTo(win, 'Start');
   await win.getByRole('button', { name: 'Open a PDF…' }).click();
+}
+
+/** Goes on past the list of what the new file carries, shown before saving. */
+export async function passReview(win: Page): Promise<void> {
+  await win.getByTestId('review-dialog').getByRole('button', { name: /^Choose (where to save|a folder)…$/ }).click();
 }
 
 export async function waitForFirstPage(win: Page): Promise<void> {

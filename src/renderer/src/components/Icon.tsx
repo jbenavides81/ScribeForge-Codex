@@ -31,7 +31,8 @@ export type IconName =
   | 'underline'
   | 'strikeout'
   | 'note'
-  | 'textbox';
+  | 'textbox'
+  | 'details';
 
 const PATHS: Record<IconName, string[]> = {
   logo: [
@@ -71,6 +72,7 @@ const PATHS: Record<IconName, string[]> = {
   strikeout: ['M44 14 A12 9 0 0 0 20 20 C 20 30 44 30 44 42 A12 9 0 0 1 20 48', 'M10 32 H54'],
   note: ['M8 10 H56 V44 H28 L16 56 V44 H8 Z', 'M18 22 H46', 'M18 32 H38'],
   textbox: ['M6 12 H58 V52 H6 Z', 'M20 22 H44', 'M32 22 V44'],
+  details: ['M16 6 H38 L50 18 V58 H16 Z', 'M38 6 V18 H50', 'M33 32 V48', 'M33 23 V24'],
 };
 
 export function Icon({ name, size = 20 }: { name: IconName; size?: number }) {

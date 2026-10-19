@@ -191,3 +191,39 @@ export async function textPosition(bytes: Uint8Array, page: number, needle: stri
   if (!item || !('transform' in item)) return null;
   return { x: item.transform[4], y: item.transform[5], width: item.width, height: item.height };
 }
+
+/**
+ * The text pdf.js actually draws on a page, leaving out anything in a hidden layer (which
+ * getTextContent would still include).
+ */
+export async function drawnText(bytes: Uint8Array, page: number): Promise<string> {
+  const doc = await pdfjs.getDocument({ data: bytes.slice(), standardFontDataUrl: FONTS, useWorkerFetch: false, verbosity: 0 }).promise;
+  const config = await doc.getOptionalContentConfig();
+  const ops = await (await doc.getPage(page)).getOperatorList();
+  const OPS = pdfjs.OPS;
+  let hidden = 0;
+  let text = '';
+  for (let i = 0; i < ops.fnArray.length; i++) {
+    const fn = ops.fnArray[i];
+    const args = ops.argsArray[i];
+    if (fn === OPS.beginMarkedContentProps) {
+      if (hidden > 0 || (args[0] === 'OC' && args[1] && !config.isVisible(args[1]))) hidden++;
+    } else if (fn === OPS.beginMarkedContent) {
+      if (hidden > 0) hidden++;
+    } else if (fn === OPS.endMarkedContent) {
+      if (hidden > 0) hidden--;
+    } else if (fn === OPS.showText && hidden === 0) {
+      text += (args[0] as { unicode?: string }[]).map((g) => g?.unicode ?? '').join('') + ' ';
+    }
+  }
+  await doc.loadingTask.destroy();
+  return text.trim();
+}
+
+/** The document's details as pdf.js reads them: the classic ones and the XMP copy. */
+export async function readerDetails(bytes: Uint8Array): Promise<{ info: Record<string, unknown>; xmp: Record<string, unknown> | null }> {
+  const doc = await pdfjs.getDocument({ data: bytes.slice(), standardFontDataUrl: FONTS, useWorkerFetch: false, verbosity: 0 }).promise;
+  const { info, metadata } = await doc.getMetadata();
+  await doc.loadingTask.destroy();
+  return { info: info as Record<string, unknown>, xmp: metadata ? Object.fromEntries(metadata) : null };
+}

@@ -4,12 +4,13 @@ An open-source, offline PDF toolkit for Windows: view, organise, annotate, inspe
 
 ScribeForge never sends anything over the network, and it never changes the files you open: edits save to new files.
 
-**Status:** stops 1a, 1b and 1c are built. Version 0.3.0. You can:
+**Status:** stops 1a to 1d are built. Version 0.4.0. You can:
 - open, view, search and copy from PDFs;
 - on the Pages screen, merge, split, reorder, rotate, delete, extract and insert blank pages;
-- on the Document screen, highlight, underline and strike out text, and add notes and text boxes.
+- on the Document screen, highlight, underline and strike out text, and add notes and text boxes;
+- on the Details screen, see and change a file's title, author, subject and keywords, and see everything else it carries: attached files, form fields, comments, scripts, bookmarks, hidden layers and links.
 
-Everything saves to a new file.
+Everything saves to a new file. Before saving, ScribeForge shows what the new file will carry (you can turn this off in Settings).
 
 | Document | What it is |
 |---|---|
@@ -74,7 +75,7 @@ npm run trial:reset
 | `src/main/` | The app process: window, menus, file dialogs, reading files, settings, the network guard |
 | `src/preload/` | The small bridge the screens are allowed to call |
 | `src/renderer/` | The screens (React), styles, the pdf.js viewer, annotating, and the Pages screen with its worker |
-| `src/engine/` | The PDF engine for the page tools and annotations: plain TypeScript, run in a worker inside the window and in the unit tests |
+| `src/engine/` | The PDF engine for the page tools, annotations and file details: plain TypeScript, run in a worker inside the window and in the unit tests |
 | `src/shared/` | Code used by both sides: themes and the annotation colours (the only places colours are defined), settings rules, link rules, pdf.js safety options |
 | `tests/unit/` | Unit tests (Vitest) |
 | `tests/e2e/` | Whole-app tests (Playwright), for the built app and the installed app |
@@ -94,6 +95,10 @@ npm run trial:reset
     - Scripts and other actions in the pages are removed.
     - Saving over the original asks a second, plain question first.
 - **Annotations are standard PDF annotations,** so Edge, Acrobat and other readers show them. They're only added to the new file when you save. Your name goes on them only if you type it in Settings.
+- **No hidden surprises.** Before every save, a list shows what the new file carries besides its pages. Scripts and files attached to the whole document are never copied into new files.
+- **A file's details are kept in two places** (the classic details and a copy in XMP format). New files always get both, matching, so old values can't linger in either.
+- **Hidden layers stay hidden** in new files, and the list says they're there, because what's on them is still in the file.
+- **Files locked by their author** (no password needed to open, but limits on copying or changes) can be viewed and their pages saved. ScribeForge says first that the new file won't have those limits.
 
 ## Interim parts, to match BC6 later
 

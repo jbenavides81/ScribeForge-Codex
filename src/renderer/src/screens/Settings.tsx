@@ -117,6 +117,17 @@ export function Settings({
 
       <fieldset className="sf-section">
         <legend>
+          <h2>Saving</h2>
+        </legend>
+        <label className="sf-choice">
+          <input type="checkbox" checked={settings.reviewBeforeSave} onChange={(e) => onChange({ reviewBeforeSave: e.target.checked })} />
+          Before saving, show what the new file carries
+        </label>
+        <p className="sf-muted">Such as its details, attached files, comments and hidden layers, so nothing goes out by surprise.</p>
+      </fieldset>
+
+      <fieldset className="sf-section">
+        <legend>
           <h2>Recent files</h2>
         </legend>
         <label className="sf-choice">

@@ -4,7 +4,7 @@ import { expect, test } from '@playwright/test';
 import { existsSync, mkdtempSync, readdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { annotations, findEverywhere, pageIds, strayPages } from '../unit/support/inspect';
+import { annotations, drawnText, findEverywhere, pageIds, readerDetails, strayPages } from '../unit/support/inspect';
 import {
   answerDialogs,
   blockedRequests,
@@ -15,6 +15,7 @@ import {
   openedLinks,
   openFixture,
   PACKAGED_EXE,
+  passReview,
   recordOpenedLinks,
   setTheme,
   VERSION,
@@ -79,6 +80,7 @@ test('the installed app\'s page tools build, save and split files', async ({}, i
   const out = mkdtempSync(path.join(tmpdir(), 'scribeforge-e2e-out-'));
   await answerDialogs(app, { saveAs: path.join(out, 'edited.pdf') });
   await win.getByRole('button', { name: 'Save as new file…' }).click();
+  await passReview(win);
   await expect(win.getByTestId('message')).toContainText('Saved edited.pdf (5 pages).');
   const bytes = new Uint8Array(readFileSync(path.join(out, 'edited.pdf')));
   expect(await pageIds(bytes)).toEqual([1, 2, 3, 4, 5].map((n) => `UNIQUE-PAGE-${n}`));
@@ -89,7 +91,35 @@ test('the installed app\'s page tools build, save and split files', async ({}, i
   await win.getByRole('button', { name: 'Split…' }).click();
   await answerDialogs(app, { folder: out });
   await win.getByTestId('split-dialog').getByRole('button', { name: 'Choose a folder and split' }).click();
+  await passReview(win);
   await expect(win.getByTestId('message')).toContainText('Split into 3 files');
+  expect(await blockedRequests(app)).toEqual([]);
+  await closeApp(app);
+  expect(fixtureHashes()).toEqual(before);
+});
+
+test("the installed app's Details screen reads a file, and edited details are saved in both copies", async ({}, info) => {
+  test.skip(!existsSync(PACKAGED_EXE), 'Run "npm run pack" first.');
+  const before = fixtureHashes();
+  const run = await launch(info.project.name);
+  const { app, win } = run;
+  await openFixture(run, 'carries.pdf');
+  await waitForFirstPage(win);
+  await goTo(win, 'Details');
+  await expect(win.getByTestId('carries').locator('[data-carries="layers"]')).toContainText('2 layers, 1 hidden');
+  await win.getByLabel('Title', { exact: true }).fill('Installed title');
+  const out = mkdtempSync(path.join(tmpdir(), 'scribeforge-e2e-out-'));
+  await answerDialogs(app, { saveAs: path.join(out, 'details.pdf') });
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send('menu', 'save'));
+  await expect(win.getByTestId('review-dialog')).toContainText('Title: Installed title');
+  await passReview(win);
+  await expect(win.getByTestId('message')).toContainText('Saved details.pdf (2 pages).');
+  const bytes = new Uint8Array(readFileSync(path.join(out, 'details.pdf')));
+  const { info: classic, xmp } = await readerDetails(bytes);
+  expect(classic.Title).toBe('Installed title');
+  expect(xmp?.['dc:title']).toBe('Installed title');
+  expect(await findEverywhere(bytes, 'CARRIES-OLD-TITLE')).toEqual([]);
+  expect(await drawnText(bytes, 1)).not.toContain('HIDDEN-LAYER-TEXT');
   expect(await blockedRequests(app)).toEqual([]);
   await closeApp(app);
   expect(fixtureHashes()).toEqual(before);
@@ -125,6 +155,7 @@ test("the installed app's annotations are saved for other readers", async ({}, i
   const out = mkdtempSync(path.join(tmpdir(), 'scribeforge-e2e-out-'));
   await answerDialogs(app, { saveAs: path.join(out, 'annotated.pdf') });
   await annotate.getByRole('button', { name: 'Save as new file…' }).click();
+  await passReview(win);
   await expect(win.getByTestId('message')).toContainText('2 annotations saved with the pages.');
   const saved = await annotations(new Uint8Array(readFileSync(path.join(out, 'annotated.pdf'))));
   expect(saved.map((a) => [a.page, a.subtype, a.author])).toEqual([

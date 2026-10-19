@@ -9,11 +9,14 @@ export function Dialog({
   children,
   onCancel,
   testId,
+  wide = false,
 }: {
   title: string;
   children: ReactNode;
   onCancel: () => void;
   testId?: string;
+  /** For long content, such as what a new file carries. */
+  wide?: boolean;
 }) {
   const titleId = useId();
   const ref = useRef<HTMLDivElement>(null);
@@ -52,7 +55,7 @@ export function Dialog({
     <div className="sf-scrim">
       <div
         ref={ref}
-        className="sf-dialog"
+        className={`sf-dialog${wide ? ' sf-dialog-wide' : ''}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}

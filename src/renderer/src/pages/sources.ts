@@ -10,6 +10,8 @@ export interface SourceDoc {
   bytes: Uint8Array;
   /** Only for password-protected files, kept in memory while the document is open. */
   password?: string;
+  /** For a locked file, what its author allows (pdf.js flags); null when it isn't locked. */
+  permissions: number[] | null;
   /** For drawing thumbnails. */
   pdf: PdfDocument;
 }

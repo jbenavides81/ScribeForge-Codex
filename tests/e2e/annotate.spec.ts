@@ -5,7 +5,7 @@ import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { annotations, pageIds, strayPages, textPosition } from '../unit/support/inspect';
-import { answerDialogs, closeApp, dialogLog, fixtureHashes, goTo, launch, openFixture, SCREENS, waitForFirstPage, type Running } from './helpers';
+import { answerDialogs, closeApp, dialogLog, fixtureHashes, goTo, launch, openFixture, passReview, SCREENS, waitForFirstPage, type Running } from './helpers';
 
 // The app of the test running now, so a failed test still closes its window.
 let current: Running | null = null;
@@ -158,13 +158,14 @@ test('highlight, note and text box, saved as a new file that other readers show'
   // Unsaved: the Pages screen doesn't get the page-changes dot, but closing asks first.
   await expect(win.getByRole('button', { name: 'Pages', exact: true }).locator('.sf-dot')).toHaveCount(0);
   await win.getByRole('button', { name: 'Close document' }).click();
-  await expect(win.getByTestId('confirm-dialog')).toContainText('page changes or annotations');
+  await expect(win.getByTestId('confirm-dialog')).toContainText('pages, annotations or details');
   await win.getByTestId('confirm-dialog').getByRole('button', { name: 'Keep editing' }).click();
 
   // Save. The original is untouched (checked after all tests) and the new file opens.
   const target = path.join(outDir(), 'annotated.pdf');
   await answerDialogs(app, { saveAs: target });
   await toolbar(win).getByRole('button', { name: 'Save as new file…' }).click();
+  await passReview(win);
   await expect(win.getByTestId('message')).toContainText('Saved annotated.pdf (6 pages).');
   await expect(win.getByTestId('message')).toContainText('3 annotations saved with the pages.');
   await expect(win.locator('.sf-doc-name')).toHaveText('annotated.pdf');
@@ -225,6 +226,7 @@ test('marks on a turned page land on the text, and annotations follow page chang
   const target = path.join(outDir(), 'moved.pdf');
   await answerDialogs(app, { saveAs: target });
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send('menu', 'save'));
+  await passReview(win);
   await expect(win.getByTestId('message')).toContainText('1 annotation saved with the pages.');
   await expect(win.getByTestId('message')).toContainText("1 annotation was on pages that aren't in the new file, so it was left out.");
   expect((await dialogLog(app)).filter((d) => d.kind === 'save')).toHaveLength(1);
@@ -289,6 +291,7 @@ test('Delete, Escape, undo and redo; empty text boxes are not saved', async ({},
   const target = path.join(outDir(), 'notes.pdf');
   await answerDialogs(app, { saveAs: target });
   await toolbar(win).getByRole('button', { name: 'Save as new file…' }).click();
+  await passReview(win);
   await expect(win.getByTestId('message')).toContainText('1 annotation saved with the pages.');
   const saved = await annotations(read(target));
   expect(saved.map((a) => [a.page, a.subtype, a.contents, a.author])).toEqual([[1, 'Text', 'first', '']]);

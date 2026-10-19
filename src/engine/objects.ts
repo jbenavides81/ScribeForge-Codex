@@ -14,8 +14,17 @@ import {
   PDFString,
   type PDFObject,
 } from '@cantoo/pdf-lib';
+import type { SourceInput } from './types';
 
 export const N = (name: string) => PDFName.of(name);
+
+/**
+ * Loads a source PDF. Files locked only against changes (they open without asking for a
+ * password) are opened with the empty password, as every PDF reader does.
+ */
+export function openSource(source: SourceInput): Promise<PDFDocument> {
+  return PDFDocument.load(source.bytes, { password: source.password ?? '', updateMetadata: false });
+}
 
 export function nameOf(obj: PDFObject | undefined): string | undefined {
   return obj instanceof PDFName ? obj.decodeText() : undefined;
@@ -183,4 +192,31 @@ export function cutStrayPageReferences(doc: PDFDocument): number {
   visit(ctx.trailerInfo.Root);
   visit(ctx.trailerInfo.Info);
   return cut;
+}
+
+/**
+ * Every entry of a name tree (where a document keeps attachments, document scripts and named
+ * destinations), as [name, value] pairs. Loops and very large trees are cut short.
+ */
+export function nameTreeEntries(doc: PDFDocument, tree: PDFDict | undefined, limit = 10_000): [string, PDFObject][] {
+  const out: [string, PDFObject][] = [];
+  if (!tree) return out;
+  const seen = new Set<PDFDict>();
+  const visit = (node: PDFDict, depth: number) => {
+    if (seen.has(node) || depth > 30 || out.length >= limit) return;
+    seen.add(node);
+    const pairs = node.lookupMaybe(N('Names'), PDFArray);
+    if (pairs) {
+      for (let i = 0; i + 1 < pairs.size() && out.length < limit; i += 2) {
+        out.push([textOf(resolve(doc, pairs.get(i))) ?? '', resolve(doc, pairs.get(i + 1)) as PDFObject]);
+      }
+    }
+    const kids = node.lookupMaybe(N('Kids'), PDFArray);
+    for (let i = 0; i < (kids?.size() ?? 0); i++) {
+      const kid = kids?.lookup(i);
+      if (kid instanceof PDFDict) visit(kid, depth + 1);
+    }
+  };
+  visit(tree, 0);
+  return out;
 }

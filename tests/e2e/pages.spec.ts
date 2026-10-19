@@ -16,6 +16,7 @@ import {
   goTo,
   launch,
   openFixture,
+  passReview,
   waitForFirstPage,
   type Running,
 } from './helpers';
@@ -71,6 +72,7 @@ test('rotate, delete, drag to reorder, undo and redo, then save as a new file', 
   const target = path.join(outDir(), 'result.pdf');
   await answerDialogs(app, { saveAs: target });
   await win.getByRole('button', { name: 'Save as new file…' }).click();
+  await passReview(win);
   await expect(win.getByTestId('message')).toContainText('Saved result.pdf (5 pages).');
   await expect(win.getByTestId('message')).toContainText('1 link and 1 bookmark pointed to pages that aren\'t in the new file');
   // The new file opens in place of the old one.
@@ -101,6 +103,7 @@ test('add files to merge, nesting bookmarks under each file', async ({}, info) =
   const target = path.join(outDir(), 'merged.pdf');
   await answerDialogs(app, { saveAs: target });
   await win.getByRole('button', { name: 'Save as new file…' }).click();
+  await passReview(win);
   await expect(win.getByTestId('message')).toContainText('Saved merged.pdf (8 pages).');
   expect((await dialogLog(app)).find((d) => d.kind === 'save')?.defaultPath).toBe(path.join(FIXTURES, 'links (merged).pdf'));
   const marks = await bookmarks(read(target));
@@ -120,6 +123,7 @@ test('save selected pages as a new file, keeping the document open', async ({}, 
   const target = path.join(outDir(), 'some.pdf');
   await answerDialogs(app, { saveAs: target });
   await win.getByRole('button', { name: 'Save selected pages…' }).click();
+  await passReview(win);
   await expect(win.getByTestId('message')).toContainText('Saved some.pdf (2 pages).');
   expect((await dialogLog(app)).find((d) => d.kind === 'save')?.defaultPath).toBe(path.join(FIXTURES, 'links (pages 2, 4).pdf'));
   expect(await pageIds(read(target))).toEqual(['UNIQUE-PAGE-2', 'UNIQUE-PAGE-4']);
@@ -143,6 +147,7 @@ test('split into files in a chosen folder; ranges are checked first', async ({},
   const folder = outDir();
   await answerDialogs(app, { folder });
   await dialog.getByRole('button', { name: 'Choose a folder and split' }).click();
+  await passReview(win);
   await expect(win.getByTestId('message')).toContainText(`Split into 3 files in ${folder}.`);
   expect(readdirSync(folder).sort()).toEqual(['links (pages 1-2).pdf', 'links (pages 4-6).pdf', 'links (page 3).pdf'].sort());
   expect(await pageIds(read(path.join(folder, 'links (pages 4-6).pdf')))).toEqual(['UNIQUE-PAGE-4', 'UNIQUE-PAGE-5', 'UNIQUE-PAGE-6']);
@@ -152,6 +157,7 @@ test('split into files in a chosen folder; ranges are checked first', async ({},
   await win.getByRole('button', { name: 'Split…' }).click();
   await win.getByTestId('split-dialog').getByLabel('Every page as its own file').check();
   await win.getByTestId('split-dialog').getByRole('button', { name: 'Choose a folder and split' }).click();
+  await passReview(win);
   await expect(win.getByTestId('message')).toContainText('Split into 6 files');
   expect(readdirSync(folder)).toContain('links (page 3) 2.pdf');
   await closeApp(app);
@@ -174,6 +180,7 @@ test('replacing the original file asks first; Cancel leaves it exactly as it was
 
   await answerDialogs(app, { saveAs: original, messageResponse: 1 });
   await win.getByRole('button', { name: 'Save as new file…' }).click();
+  await passReview(win);
   await expect.poll(async () => (await dialogLog(app)).filter((d) => d.kind === 'message').map((d) => d.message)).toEqual([
     'This replaces the original file, original.pdf.',
   ]);
@@ -182,6 +189,7 @@ test('replacing the original file asks first; Cancel leaves it exactly as it was
 
   await answerDialogs(app, { saveAs: original, messageResponse: 0 });
   await win.getByRole('button', { name: 'Save as new file…' }).click();
+  await passReview(win);
   await expect(win.getByTestId('message')).toContainText('Saved original.pdf (6 pages).');
   expect(sha(original)).not.toBe(before);
   expect((await rotations(read(original)))[0]).toBe(90);
@@ -239,6 +247,7 @@ test('password-protected files: the page tools say the new file will have no pas
 
   await win.getByRole('button', { name: 'Save as new file…' }).click();
   await win.getByTestId('confirm-dialog').getByRole('button', { name: 'Save without a password' }).click();
+  await passReview(win);
   await expect(win.getByTestId('message')).toContainText('Saved unlocked.pdf (2 pages).');
   expect((await pageTexts(read(target)))[0]).toContain('Protected test document');
   await closeApp(app);
@@ -277,6 +286,9 @@ test('merging two 600-page files in the app takes under 10 seconds', async ({}, 
   await expect(status(win)).toContainText('1200 pages');
   const target = path.join(outDir(), 'big.pdf');
   await answerDialogs(app, { saveAs: target });
+  await goTo(win, 'Settings');
+  await win.getByLabel('Before saving, show what the new file carries').uncheck();
+  await goTo(win, 'Pages');
   const start = Date.now();
   await win.getByRole('button', { name: 'Save as new file…' }).click();
   await expect(win.getByTestId('message')).toContainText('Saved big.pdf (1200 pages).', { timeout: 30_000 });
@@ -299,6 +311,7 @@ test('File > Save as new file (Ctrl+S) from the Document screen saves once', asy
   await answerDialogs(app, { saveAs: target });
   // The same thing the menu item does.
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send('menu', 'save'));
+  await passReview(win);
   await expect(win.getByTestId('message')).toContainText('Saved from-menu.pdf (3 pages).');
   expect((await dialogLog(app)).filter((d) => d.kind === 'save')).toHaveLength(1);
   // Coming back to Pages later doesn't save again.
@@ -318,6 +331,7 @@ test('nothing is ever written next to the original unless a Save dialog chose it
   // Cancel the Save dialog: no file anywhere.
   await answerDialogs(app, {});
   await win.getByRole('button', { name: 'Save as new file…' }).click();
+  await passReview(win);
   await expect.poll(async () => (await dialogLog(app)).filter((d) => d.kind === 'save').length).toBe(1);
   expect(existsSync(path.join(FIXTURES, 'links (edited).pdf'))).toBe(false);
   await expect(win.getByTestId('message')).toHaveCount(0);

@@ -10,11 +10,25 @@
 // 3. Scripts and other risky actions are removed; form fields keep their look but are detached.
 // 4. A final check cuts any remaining reference to a page outside the page list, and everything
 //    no longer reachable is swept out before saving.
-import { degrees, PDFArray, PDFDict, PDFDocument, PDFString, type PDFFont, type PDFObject, type PDFPage } from '@cantoo/pdf-lib';
+// 5. The new file's details are written twice, in the classic details and a fresh XMP copy, so
+//    the two always agree and nothing old from either is carried over.
+import { degrees, PDFArray, PDFDict, PDFDocument, PDFObjectCopier, PDFPage, PDFString, type PDFFont, type PDFObject } from '@cantoo/pdf-lib';
 import { addAnnotations } from './annotate';
-import { cutStrayPageReferences, destinationTarget, N, nameOf, sweepUnreachable } from './objects';
+import { documentActions, readInfo, readXmpFrom } from './inspect';
+import { copyLayers } from './layers';
+import { cutStrayPageReferences, destinationTarget, N, nameOf, nameTreeEntries, openSource, sweepUnreachable } from './objects';
 import { readOutline, writeOutline, type OutlineNode, type PlacedBookmark } from './outline';
-import { emptyReport, type AnnotationInput, type BuildReport, type PageItem, type Rotation, type SourceInput } from './types';
+import {
+  emptyReport,
+  type AnnotationInput,
+  type BuildOptions,
+  type BuildReport,
+  type DocInfo,
+  type PageItem,
+  type Rotation,
+  type SourceInput,
+} from './types';
+import { writeXmp } from './xmp';
 
 const PLACEHOLDER = 'ScribeForge-page:';
 
@@ -138,10 +152,51 @@ function normalise(angle: number): Rotation {
   return ((((Math.round(angle / 90) * 90) % 360) + 360) % 360) as Rotation;
 }
 
+/** A date from XMP, if it reads as one. */
+function xmpDateValue(text: string | undefined): Date | undefined {
+  const date = text ? new Date(text) : undefined;
+  return date && !Number.isNaN(date.getTime()) ? date : undefined;
+}
+
+/**
+ * Writes the new file's details: the classic ones and a matching XMP copy. Title, author,
+ * subject and keywords come from `details` when given (the Details screen always gives them),
+ * otherwise from `first`; the program that made the original and when stay as they were.
+ */
+function writeDetails(out: PDFDocument, first: PDFDocument | undefined, options: BuildOptions): void {
+  const now = options.now ?? new Date();
+  const info = first ? readInfo(first) : undefined;
+  const xmp = first ? readXmpFrom(first) : undefined;
+  const fromXmp = xmp?.state === 'read' ? xmp.values : {};
+  const details: DocInfo = options.details ?? {
+    title: info?.title || fromXmp.title || '',
+    author: info?.author || fromXmp.author || '',
+    subject: info?.subject || fromXmp.subject || '',
+    keywords: info?.keywords || fromXmp.keywords || '',
+  };
+  const creator = info?.creator || fromXmp.creatorTool || 'ScribeForge';
+  const producer = options.producer ?? 'ScribeForge';
+  const created = info?.created ?? xmpDateValue(fromXmp.createDate) ?? now;
+
+  if (details.title) out.setTitle(details.title);
+  if (details.author) out.setAuthor(details.author);
+  if (details.subject) out.setSubject(details.subject);
+  if (details.keywords) out.setKeywords([details.keywords]);
+  out.setCreator(creator);
+  out.setProducer(producer);
+  out.setCreationDate(created);
+  out.setModificationDate(now);
+
+  const packet = writeXmp({ ...details, producer, creatorTool: creator, created, modified: now });
+  const stream = out.context.stream(new TextEncoder().encode(packet), { Type: 'Metadata', Subtype: 'XML' });
+  out.catalog.set(N('Metadata'), out.context.register(stream));
+}
+
 export async function buildPdf(
   sources: SourceInput[],
   items: PageItem[],
   annotations: AnnotationInput[] = [],
+  options: BuildOptions = {},
 ): Promise<{ bytes: Uint8Array; report: BuildReport }> {
   if (items.length === 0) throw new Error('A PDF needs at least one page.');
   const report = emptyReport();
@@ -160,20 +215,34 @@ export async function buildPdf(
   for (const id of needed.keys()) {
     const source = sources.find((s) => s.id === id);
     if (!source) throw new Error(`Unknown source ${id}`);
-    const doc = await PDFDocument.load(source.bytes, { password: source.password, updateMetadata: false });
+    const doc = await openSource(source);
     const count = doc.getPageCount();
     for (const index of needed.get(id) as number[]) {
       if (!Number.isInteger(index) || index < 0 || index >= count) throw new Error(`${source.name} has no page ${index + 1}`);
     }
     outlines.set(id, readOutline(doc));
+    // Whole-document scripts and attachments aren't copied: pages are. The report says so.
+    report.actionsRemoved += documentActions(doc).length;
+    const names = doc.catalog.lookupMaybe(N('Names'), PDFDict);
+    report.attachmentsLeftOut += nameTreeEntries(doc, names?.lookupMaybe(N('EmbeddedFiles'), PDFDict)).length;
     prepareSourcePages(doc, id, needed.get(id) as number[], report);
     docs.set(id, doc);
   }
 
+  // Each source's pages are copied with one copier, which later copies its layer settings too,
+  // so both refer to the same copied layers.
   const out = await PDFDocument.create({ updateMetadata: false });
   const copies = new Map<string, Map<number, PDFPage>>();
+  const copiers = new Map<string, PDFObjectCopier>();
   for (const [id, indices] of needed) {
-    const pages = await out.copyPages(docs.get(id) as PDFDocument, indices);
+    const doc = docs.get(id) as PDFDocument;
+    const copier = PDFObjectCopier.for(doc.context, out.context);
+    copiers.set(id, copier);
+    const sourcePages = doc.getPages();
+    const pages = indices.map((index) => {
+      const node = copier.copy(sourcePages[index].node);
+      return PDFPage.of(node, out.context.register(node), out);
+    });
     copies.set(id, new Map(indices.map((index, i) => [index, pages[i]])));
   }
 
@@ -186,6 +255,7 @@ export async function buildPdf(
       continue;
     }
     let page = copies.get(item.source)?.get(item.index) as PDFPage;
+    // The same page twice: a separate copy (its layers, if any, are copied separately too).
     if (used.has(page)) [page] = await out.copyPages(docs.get(item.source) as PDFDocument, [item.index]);
     used.add(page);
     out.addPage(page);
@@ -226,22 +296,16 @@ export async function buildPdf(
     writeOutline(out, top);
   }
 
-  // Document details from the first source.
+  copyLayers(
+    out,
+    sourceOrder.map((id) => ({ name: sources.find((s) => s.id === id)?.name ?? id, doc: docs.get(id) as PDFDocument, copier: copiers.get(id) as PDFObjectCopier })),
+  );
+
+  // Document details, and the document's language, from the first source.
   const first = docs.get(sourceOrder[0]);
-  if (first) {
-    const title = first.getTitle();
-    const author = first.getAuthor();
-    const subject = first.getSubject();
-    const keywords = first.getKeywords();
-    if (title) out.setTitle(title);
-    if (author) out.setAuthor(author);
-    if (subject) out.setSubject(subject);
-    if (keywords) out.setKeywords([keywords]);
-    const lang = first.catalog.get(N('Lang'));
-    if (lang instanceof PDFString) out.catalog.set(N('Lang'), lang);
-  }
-  out.setProducer('ScribeForge');
-  out.setCreator('ScribeForge');
+  writeDetails(out, first, options);
+  const lang = first?.catalog.get(N('Lang'));
+  if (lang instanceof PDFString) out.catalog.set(N('Lang'), lang);
 
   report.strayReferencesCut = cutStrayPageReferences(out);
   report.objectsSwept = sweepUnreachable(out);

@@ -1,21 +1,25 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import type { AppInfo, MenuCommand, OpenedFile, OpenResult, RecentFile, SettingsChange } from '../../shared/api';
 import type { Settings as AppSettings } from '../../shared/settings';
+import { DOC_INFO_FIELDS, type DocInfo, type FileReport } from '../../engine/types';
 import { annotReducer, emptyAnnots, hasAnnotChanges } from './annotate/annotState';
 import { applyAppearance, onSystemThemeChange } from './appearance';
 import { Dialog } from './components/Dialog';
+import { CarriesList } from './details/CarriesList';
 import { Icon, type IconName } from './components/Icon';
 import { editReducer, emptyEdit, hasChanges, newKey, type Tile } from './pages/editState';
 import { PagesView } from './pages/PagesView';
-import { useSaving } from './pages/saving';
-import type { ConfirmRequest, SourceDoc } from './pages/sources';
+import { inspectDocument } from './pages/engineClient';
+import { useSaving, type ReviewRequest } from './pages/saving';
+import { engineInput, type ConfirmRequest, type SourceDoc } from './pages/sources';
 import { About } from './screens/About';
+import { Details } from './screens/Details';
 import { Settings } from './screens/Settings';
 import { Start } from './screens/Start';
 import { DocumentView } from './viewer/DocumentView';
 import { loadDocument, OpenError, type PdfDocument } from './viewer/pdfjs';
 
-type Screen = 'start' | 'document' | 'pages' | 'settings' | 'about';
+type Screen = 'start' | 'document' | 'pages' | 'details' | 'settings' | 'about';
 
 interface OpenDocument {
   /** Each opened document gets a fresh viewer. */
@@ -26,6 +30,25 @@ interface OpenDocument {
   bytes: Uint8Array;
   /** Only for password-protected files; in memory while the document is open, never stored. */
   password?: string;
+  /** For a locked file, what its author allows (pdf.js flags); null when it isn't locked. */
+  permissions: number[] | null;
+}
+
+/** The open document's details and what it carries, read in the background after opening. */
+interface DocReport {
+  docId: number;
+  report: FileReport | null;
+  failed: boolean;
+}
+
+/** What a locked file allows, or null when it isn't locked. */
+async function permissionsOf(pdf: PdfDocument): Promise<number[] | null> {
+  try {
+    const allowed = await pdf.getPermissions();
+    return allowed ? [...allowed] : null;
+  } catch {
+    return null;
+  }
 }
 
 interface PasswordRequest {
@@ -70,6 +93,9 @@ export function App() {
   const [link, setLink] = useState<string | null>(null);
   const [command, setCommand] = useState<{ name: MenuCommand; seq: number } | null>(null);
   const [annots, annotDispatch] = useReducer(annotReducer, emptyAnnots);
+  const [docReport, setDocReport] = useState<DocReport | null>(null);
+  const [detailsEdit, setDetailsEdit] = useState<Partial<DocInfo>>({});
+  const [reviewing, setReviewing] = useState<(ReviewRequest & { resolve: (ok: boolean) => void }) | null>(null);
   const docRef = useRef<OpenDocument | null>(null);
   docRef.current = doc;
   const addedRef = useRef<SourceDoc[]>([]);
@@ -96,10 +122,31 @@ export function App() {
     return onSystemThemeChange(() => applyAppearance(settings));
   }, [settings]);
 
-  // Closing the window asks first while page changes or annotations aren't saved.
+  // The new file's details: the open file's, with any changes made on the Details screen.
+  const report = doc && docReport?.docId === doc.id ? docReport.report : null;
+  const detailValues: DocInfo | undefined = report ? { ...report.details.shown, ...detailsEdit } : undefined;
+  const detailsChanged = !!report && DOC_INFO_FIELDS.some((f) => detailsEdit[f] !== undefined && detailsEdit[f] !== report.details.shown[f]);
+
+  // Closing the window asks first while page changes, annotations or details aren't saved.
   const pagesChanged = hasChanges(edit);
-  const dirty = pagesChanged || hasAnnotChanges(annots);
+  const dirty = pagesChanged || hasAnnotChanges(annots) || detailsChanged;
+  const dirtyRef = useRef(dirty);
+  dirtyRef.current = dirty;
   useEffect(() => api.setUnsaved(dirty), [dirty]);
+
+  // Read the open document's details and contents in the background.
+  useEffect(() => {
+    if (!doc) return;
+    let current = true;
+    const source = { id: `doc${doc.id}`, name: doc.name, path: doc.path, bytes: doc.bytes, password: doc.password, permissions: doc.permissions, pdf: doc.pdf };
+    inspectDocument(engineInput(source)).then(
+      (result) => current && setDocReport({ docId: doc.id, report: result, failed: false }),
+      () => current && setDocReport({ docId: doc.id, report: null, failed: true }),
+    );
+    return () => {
+      current = false;
+    };
+  }, [doc]);
 
   const changeSettings = useCallback(async (change: SettingsChange) => {
     setSettings(await api.changeSettings(change));
@@ -114,10 +161,10 @@ export function App() {
   /** Runs `action` now, or after the person agrees to lose unsaved changes. */
   const unlessUnsaved = useCallback(
     async (action: () => void | Promise<void>) => {
-      if (hasChanges(editRef.current) || hasAnnotChanges(annotsRef.current)) {
+      if (dirtyRef.current) {
         const ok = await confirm({
           title: 'Discard your changes?',
-          message: "You have page changes or annotations that aren't saved yet. If you continue, they are lost.",
+          message: "You have changes to pages, annotations or details that aren't saved yet. If you continue, they are lost.",
           confirmLabel: 'Discard changes',
           cancelLabel: 'Keep editing',
         });
@@ -145,6 +192,8 @@ export function App() {
     setAdded([]);
     dispatch({ type: 'reset', tiles: [] });
     annotDispatch({ type: 'reset' });
+    setDetailsEdit({});
+    setDocReport(null);
     setScreen('start');
     release([current?.pdf, ...extra.map((s) => s.pdf)]);
   }, []);
@@ -159,13 +208,15 @@ export function App() {
     setBusy(`Opening ${file.name}…`);
     try {
       const { pdf, password: used } = await loadDocument(file.bytes, askPassword(file.name));
+      const permissions = await permissionsOf(pdf);
       const previous = docRef.current;
       const extra = addedRef.current;
       const id = ++nextDocId.current;
-      setDoc({ id, pdf, name: file.name, path: file.path, bytes: file.bytes, password: used });
+      setDoc({ id, pdf, name: file.name, path: file.path, bytes: file.bytes, password: used, permissions });
       setAdded([]);
       dispatch({ type: 'reset', tiles: pageTiles(`doc${id}`, pdf.numPages) });
       annotDispatch({ type: 'reset' });
+      setDetailsEdit({});
       setScreen('document');
       release([previous?.pdf, ...extra.map((s) => s.pdf)]);
     } catch (error) {
@@ -192,7 +243,8 @@ export function App() {
       for (const file of files) {
         try {
           const { pdf, password: used } = await loadDocument(file.bytes, askPassword(file.name));
-          loaded.push({ id: `add${++nextSourceId.current}`, name: file.name, path: file.path, bytes: file.bytes, password: used, pdf });
+          const permissions = await permissionsOf(pdf);
+          loaded.push({ id: `add${++nextSourceId.current}`, name: file.name, path: file.path, bytes: file.bytes, password: used, permissions, pdf });
         } catch (error) {
           if (!(error instanceof OpenError && error.kind === 'cancelled')) {
             setMessage(`${file.name} couldn't be added. The file may be damaged, or it may not really be a PDF.`);
@@ -225,6 +277,9 @@ export function App() {
           break;
         case 'show-pages':
           if (docRef.current) setScreen('pages');
+          break;
+        case 'show-details':
+          if (docRef.current) setScreen('details');
           break;
         case 'save':
           if (docRef.current) void saveAllRef.current();
@@ -259,7 +314,8 @@ export function App() {
   }, [openPath]);
 
   const sources: SourceDoc[] = useMemo(
-    () => (doc ? [{ id: `doc${doc.id}`, name: doc.name, path: doc.path, bytes: doc.bytes, password: doc.password, pdf: doc.pdf }, ...added] : []),
+    () =>
+      doc ? [{ id: `doc${doc.id}`, name: doc.name, path: doc.path, bytes: doc.bytes, password: doc.password, permissions: doc.permissions, pdf: doc.pdf }, ...added] : [],
     [doc, added],
   );
 
@@ -268,7 +324,11 @@ export function App() {
     edit,
     annots,
     authorName: settings?.authorName ?? '',
+    details: detailValues,
+    producer: info ? `ScribeForge ${info.version}` : 'ScribeForge',
+    reviewBeforeSave: settings?.reviewBeforeSave ?? true,
     confirm,
+    review: (request) => new Promise<boolean>((resolve) => setReviewing({ ...request, resolve })),
     onMessage: setMessage,
     onSaved: (path) => void api.openPath(path).then(handleResult),
   });
@@ -281,6 +341,7 @@ export function App() {
     { id: 'start', label: 'Start', icon: 'open' },
     { id: 'document', label: 'Document', icon: 'document', disabled: !doc },
     { id: 'pages', label: 'Pages', icon: 'pages', disabled: !doc },
+    { id: 'details', label: 'Details', icon: 'details', disabled: !doc },
     { id: 'settings', label: 'Settings', icon: 'settings' },
     { id: 'about', label: 'About', icon: 'about' },
   ];
@@ -306,7 +367,9 @@ export function App() {
               >
                 <Icon name={item.icon} />
                 {item.label}
-                {item.id === 'pages' && pagesChanged && <span className="sf-dot" aria-hidden="true" title="Changes not saved yet" />}
+                {((item.id === 'pages' && pagesChanged) || (item.id === 'details' && detailsChanged)) && (
+                  <span className="sf-dot" aria-hidden="true" title="Changes not saved yet" />
+                )}
               </button>
             </li>
           ))}
@@ -379,6 +442,19 @@ export function App() {
             onMessage={setMessage}
           />
         )}
+        {doc && screen === 'details' && (
+          <Details
+            name={doc.name}
+            report={report}
+            failed={docReport?.docId === doc.id && docReport.failed}
+            values={detailValues ?? { title: '', author: '', subject: '', keywords: '' }}
+            changed={detailsChanged}
+            onChange={(field, value) => setDetailsEdit((current) => ({ ...current, [field]: value }))}
+            onReset={() => setDetailsEdit({})}
+            password={!!doc.password}
+            permissions={doc.permissions}
+          />
+        )}
         {screen === 'settings' && (
           <Settings
             settings={settings}
@@ -395,6 +471,52 @@ export function App() {
       </main>
 
       {password && <PasswordDialog key={password.id} request={password} />}
+      {reviewing && (
+        <Dialog
+          title={reviewing.files === 1 ? 'What the new file carries' : `What the ${reviewing.files} new files carry`}
+          onCancel={() => {
+            reviewing.resolve(false);
+            setReviewing(null);
+          }}
+          testId="review-dialog"
+          wide
+        >
+          <div className="sf-dialog-scroll" tabIndex={0} aria-label="What the new file carries">
+            {reviewing.notes.length > 0 && (
+              <ul className="sf-review-notes">
+                {reviewing.notes.map((note) => (
+                  <li key={note}>{note}</li>
+                ))}
+              </ul>
+            )}
+            <p className="sf-muted">Besides what's on its pages:</p>
+            <CarriesList carries={reviewing.carries} />
+          </div>
+          <p className="sf-muted">You can stop showing this before saving in Settings.</p>
+          <div className="sf-dialog-buttons">
+            <button
+              type="button"
+              className="sf-button"
+              onClick={() => {
+                reviewing.resolve(false);
+                setReviewing(null);
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="sf-button sf-primary"
+              onClick={() => {
+                reviewing.resolve(true);
+                setReviewing(null);
+              }}
+            >
+              {reviewing.files === 1 ? 'Choose where to save…' : 'Choose a folder…'}
+            </button>
+          </div>
+        </Dialog>
+      )}
       {confirming && (
         <Dialog
           title={confirming.title}

@@ -7,7 +7,9 @@ import path from 'node:path';
 import { THEME_CHOICES } from '../../src/shared/themes';
 import { closeApp, goTo, launch, openFixture, SCREENS, setTheme, waitForFirstPage } from './helpers';
 
-const SCREEN_NAMES = ['Start', 'Document', 'Pages', 'Settings', 'About'] as const;
+const SCREEN_NAMES = ['Start', 'Document', 'Pages', 'Details', 'Settings', 'About'] as const;
+/** Each theme's row also shows the list of what a new file carries, before saving. */
+const COLUMNS = SCREEN_NAMES.length + 1;
 
 test('screenshots of every screen in every theme', async ({}, info) => {
   test.setTimeout(300_000);
@@ -67,6 +69,14 @@ test('screenshots of every screen in every theme', async ({}, info) => {
       await win.screenshot({ path: file });
       row.push(file);
     }
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send('menu', 'save'));
+    const review = win.getByTestId('review-dialog');
+    await review.waitFor();
+    await win.waitForTimeout(300);
+    const reviewFile = path.join(SCREENS, `${theme.id}-review.png`);
+    await win.screenshot({ path: reviewFile });
+    row.push(reviewFile);
+    await review.getByRole('button', { name: 'Cancel' }).click();
     shots.push(row);
   }
   // The larger text sizes, on the busiest screens.
@@ -75,7 +85,7 @@ test('screenshots of every screen in every theme', async ({}, info) => {
   for (const size of ['large', 'larger']) {
     await goTo(win, 'Settings');
     await win.locator(`input[name="text-size"][value="${size}"]`).check();
-    for (const screen of ['Document', 'Pages'] as const) {
+    for (const screen of ['Document', 'Pages', 'Details'] as const) {
       await goTo(win, screen);
       await win.waitForTimeout(500);
       const file = path.join(SCREENS, `text-${size}-${screen.toLowerCase()}.png`);
@@ -85,12 +95,13 @@ test('screenshots of every screen in every theme', async ({}, info) => {
   }
   await closeApp(app);
 
-  // Contact sheet: one row per theme (Start, Document, Pages, Settings, About), then text sizes.
+  // Contact sheet: one row per theme (Start, Document, Pages, Details, Settings, About, and the
+  // before-save list), then text sizes.
   const scale = 0.3;
   const w = Math.round(1280 * scale);
   const h = Math.round(800 * scale);
   const rows = [...shots, sizes];
-  const sheet = createCanvas(w * SCREEN_NAMES.length + 10 * (SCREEN_NAMES.length + 1), (h + 10) * rows.length + 10);
+  const sheet = createCanvas(w * COLUMNS + 10 * (COLUMNS + 1), (h + 10) * rows.length + 10);
   const g = sheet.getContext('2d');
   g.fillStyle = '#808080';
   g.fillRect(0, 0, sheet.width, sheet.height);

@@ -3,7 +3,7 @@ import type { OpenedFile } from '../../../shared/api';
 import type { PageItem } from '../../../engine/types';
 import { Icon, type IconName } from '../components/Icon';
 import { canRemove, newKey, selectedTiles, type EditAction, type EditState, type Tile } from './editState';
-import { plural } from './saving';
+import { plural } from '../words';
 import type { SourceDoc } from './sources';
 import { SplitDialog } from './SplitDialog';
 

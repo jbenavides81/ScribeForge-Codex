@@ -56,7 +56,7 @@ function createWindow(): BrowserWindow {
       .showMessageBox(win, {
         type: 'warning',
         title: 'Unsaved changes',
-        message: 'You have page changes or annotations that aren\'t saved yet.',
+        message: 'You have changes to pages, annotations or details that aren\'t saved yet.',
         detail: 'If you close ScribeForge now, they are lost. To keep them, choose Keep editing, then Save as new file.',
         buttons: ['Close without saving', 'Keep editing'],
         defaultId: 1,

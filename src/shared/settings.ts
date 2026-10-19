@@ -10,6 +10,8 @@ export interface Settings {
   recentFiles: string[];
   /** Saved as the author of annotations. Empty: annotations have no author. */
   authorName: string;
+  /** Before saving, show what the new file carries (details, attachments, comments, …). */
+  reviewBeforeSave: boolean;
 }
 
 export const MAX_RECENT = 10;
@@ -22,6 +24,7 @@ export const DEFAULT_SETTINGS: Settings = {
   rememberRecent: true,
   recentFiles: [],
   authorName: '',
+  reviewBeforeSave: true,
 };
 
 const THEMES: readonly ThemeId[] = ['cathedral', 'light', 'dark', 'high-contrast', 'system'];
@@ -63,6 +66,10 @@ export function validateSettings(raw: unknown): { settings: Settings; problems: 
   if (r.authorName !== undefined) {
     if (typeof r.authorName === 'string') settings.authorName = cleanName(r.authorName);
     else problems.push('authorName');
+  }
+  if (r.reviewBeforeSave !== undefined) {
+    if (typeof r.reviewBeforeSave === 'boolean') settings.reviewBeforeSave = r.reviewBeforeSave;
+    else problems.push('reviewBeforeSave');
   }
   if (!settings.rememberRecent) settings.recentFiles = [];
   return { settings, problems };

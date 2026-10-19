@@ -2,7 +2,7 @@
 //   node scripts/make-fixtures.mjs
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { PDFDocument, PDFName, PDFString, StandardFonts } from '@cantoo/pdf-lib';
+import { PDFDict, PDFDocument, PDFHexString, PDFName, PDFString, StandardFonts } from '@cantoo/pdf-lib';
 
 const OUT = path.resolve('tests/fixtures/out');
 mkdirSync(OUT, { recursive: true });
@@ -181,6 +181,169 @@ async function second() {
   return doc.save();
 }
 
+// An XMP packet (the second copy of a file's details), written the ways other programs write it:
+// some values as elements, some as attributes, over several descriptions.
+function xmpPacket({ title, author, subject, keywords, producer, creatorTool }) {
+  const esc = (v) => v.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  return [
+    '<?xpacket begin="\uFEFF" id="W5M0MpCehiHzreSzNTczkc9d"?>',
+    '<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">',
+    `<rdf:Description rdf:about="" xmlns:pdf="http://ns.adobe.com/pdf/1.3/" pdf:Producer="${esc(producer)}" pdf:Keywords="${esc(keywords)}"/>`,
+    '<rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/">',
+    `<dc:title><rdf:Alt><rdf:li xml:lang="x-default">${esc(title)}</rdf:li></rdf:Alt></dc:title>`,
+    `<dc:creator><rdf:Seq><rdf:li>${esc(author)}</rdf:li></rdf:Seq></dc:creator>`,
+    `<dc:description><rdf:Alt><rdf:li xml:lang="x-default">${esc(subject)}</rdf:li></rdf:Alt></dc:description>`,
+    '</rdf:Description>',
+    `<rdf:Description rdf:about="" xmlns:xmp="http://ns.adobe.com/xap/1.0/" xmp:CreatorTool="${esc(creatorTool)}"/>`,
+    '</rdf:RDF></x:xmpmeta>',
+    '<?xpacket end="w"?>',
+  ].join('\n');
+}
+
+function setXmp(doc, packet) {
+  const stream = doc.context.stream(new TextEncoder().encode(packet), { Type: 'Metadata', Subtype: 'XML' });
+  doc.catalog.set(PDFName.of('Metadata'), doc.context.register(stream));
+}
+
+function embeddedFile(doc, name, text) {
+  const bytes = new TextEncoder().encode(text);
+  const stream = doc.context.register(
+    doc.context.flateStream(bytes, { Type: 'EmbeddedFile', Subtype: 'text/plain', Params: { Size: bytes.length } }),
+  );
+  return doc.context.register(
+    doc.context.obj({ Type: 'Filespec', F: PDFString.of(name), UF: PDFHexString.fromText(name), EF: { F: stream, UF: stream } }),
+  );
+}
+
+// For the Details screen and "what this file carries" (stop 1d): two page sizes, both copies of
+// the details (agreeing), a detail of its own, and one of each thing a file can carry.
+async function carries() {
+  const doc = await PDFDocument.create({ updateMetadata: false });
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const details = {
+    title: 'CARRIES-OLD-TITLE',
+    author: 'Fixture Author',
+    subject: 'Fixture subject',
+    keywords: 'alpha, beta',
+    producer: 'Fixture Maker 2.0',
+    creatorTool: 'Fixture Writer 1.0',
+  };
+  doc.setTitle(details.title);
+  doc.setAuthor(details.author);
+  doc.setSubject(details.subject);
+  doc.setKeywords([details.keywords]);
+  doc.setCreator(details.creatorTool);
+  doc.setProducer(details.producer);
+  doc.setCreationDate(new Date('2024-03-05T10:20:30Z'));
+  doc.setModificationDate(new Date('2025-06-07T08:09:10Z'));
+  doc.context.lookup(doc.context.trailerInfo.Info, PDFDict).set(PDFName.of('Company'), PDFString.of('Fixture Company Ltd'));
+  setXmp(doc, xmpPacket(details));
+
+  const page1 = doc.addPage([612, 792]); // US Letter
+  const page2 = doc.addPage([842, 595]); // A4, landscape
+  lines(page1, font, ['Carries test document', 'CARRIES-PAGE-1', 'Web link: example.com', 'Go to page 2']);
+  lines(page2, font, ['CARRIES-PAGE-2', 'Open a program (must never run)'], { top: 540 });
+
+  // Two layers on page 1: one shown, one hidden when the file opens.
+  const shown = doc.context.register(doc.context.obj({ Type: 'OCG', Name: PDFString.of('Visible layer') }));
+  const hidden = doc.context.register(doc.context.obj({ Type: 'OCG', Name: PDFString.of('Hidden layer') }));
+  doc.catalog.set(PDFName.of('OCProperties'), doc.context.obj({ OCGs: [shown, hidden], D: { Order: [shown, hidden], OFF: [hidden] } }));
+  const resources = page1.node.Resources();
+  resources.set(PDFName.of('Properties'), doc.context.obj({ L1: shown, L2: hidden }));
+  resources.lookup(PDFName.of('Font'), PDFDict).set(PDFName.of('FL'), font.ref);
+  const layered = doc.context.flateStream(
+    '/OC /L1 BDC BT /FL 12 Tf 54 600 Td (VISIBLE-LAYER-TEXT) Tj ET EMC /OC /L2 BDC BT /FL 12 Tf 54 580 Td (HIDDEN-LAYER-TEXT) Tj ET EMC',
+  );
+  page1.node.addContentStream(doc.context.register(layered));
+
+  // A filled-in text field (customer.name) and an unticked checkbox (agree).
+  const form = doc.getForm();
+  const field = form.createTextField('customer.name');
+  field.setText('FIELD-VALUE');
+  field.addToPage(page1, { x: 54, y: 480, width: 200, height: 20, font });
+  form.createCheckBox('agree').addToPage(page1, { x: 54, y: 450, width: 14, height: 14 });
+
+  // Comments by two people.
+  const note = doc.context.register(
+    doc.context.obj({ Type: 'Annot', Subtype: 'Text', Rect: [500, 700, 520, 720], Contents: PDFString.of('A fixture note'), T: PDFString.of('Fixture Author'), Name: 'Note' }),
+  );
+  const highlight = doc.context.register(
+    doc.context.obj({
+      Type: 'Annot',
+      Subtype: 'Highlight',
+      Rect: [54, 718, 160, 734],
+      QuadPoints: [54, 734, 160, 734, 54, 718, 160, 718],
+      C: [1, 0.9, 0.3],
+      T: PDFString.of('Second Reviewer'),
+    }),
+  );
+
+  // Links: a web address, a page, and a link that would open a program.
+  const launch = doc.context.register(
+    doc.context.obj({ Type: 'Annot', Subtype: 'Link', Rect: [54, 516, 330, 532], Border: [0, 0, 0], A: { S: 'Launch', F: PDFString.of('calc.exe') } }),
+  );
+  page1.node.set(
+    PDFName.of('Annots'),
+    doc.context.obj([...page1.node.Annots().asArray(), note, highlight, uriLink(doc, [54, 686, 230, 702], 'https://example.com/carries'), linkTo(doc, page1, [54, 668, 200, 684], page2)]),
+  );
+
+  // A file attached to page 2, and one attached to the whole document.
+  const pageFile = doc.context.register(
+    doc.context.obj({ Type: 'Annot', Subtype: 'FileAttachment', Rect: [700, 500, 720, 520], FS: embeddedFile(doc, 'page-file.txt', 'PAGE-ATTACHMENT-TEXT'), Name: 'Paperclip' }),
+  );
+  page2.node.set(PDFName.of('Annots'), doc.context.obj([launch, pageFile]));
+
+  // A document script (never run), and the document attachment.
+  const script = doc.context.register(doc.context.obj({ S: 'JavaScript', JS: PDFString.of("app.alert('CARRIES SCRIPT');") }));
+  doc.catalog.set(
+    PDFName.of('Names'),
+    doc.context.obj({
+      EmbeddedFiles: { Names: [PDFString.of('notes.txt'), embeddedFile(doc, 'notes.txt', 'ATTACHMENT-SECRET-TEXT')] },
+      JavaScript: { Names: [PDFString.of('init'), script] },
+    }),
+  );
+
+  // Two bookmarks.
+  const outlines = doc.context.nextRef();
+  const one = doc.context.nextRef();
+  const two = doc.context.nextRef();
+  doc.context.assign(one, doc.context.obj({ Title: PDFString.of('Chapter one'), Parent: outlines, Next: two, Dest: [page1.ref, PDFName.of('Fit')] }));
+  doc.context.assign(two, doc.context.obj({ Title: PDFString.of('Chapter two'), Parent: outlines, Prev: one, Dest: [page2.ref, PDFName.of('Fit')] }));
+  doc.context.assign(outlines, doc.context.obj({ Type: 'Outlines', First: one, Last: two, Count: 2 }));
+  doc.catalog.set(PDFName.of('Outlines'), outlines);
+  return doc.save();
+}
+
+// The classic details were changed but the XMP copy wasn't (what pdf-lib's setTitle does).
+async function staleXmp() {
+  const doc = await PDFDocument.create({ updateMetadata: false });
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  lines(doc.addPage([612, 792]), font, ['Stale XMP test document']);
+  doc.setTitle('Current title');
+  doc.setAuthor('Fixture Author');
+  setXmp(doc, xmpPacket({ title: 'STALE-XMP-TITLE', author: 'Fixture Author', subject: '', keywords: '', producer: 'Fixture Maker 2.0', creatorTool: 'Fixture Writer 1.0' }));
+  return doc.save();
+}
+
+// An XMP copy that isn't XMP at all.
+async function brokenXmp() {
+  const doc = await PDFDocument.create({ updateMetadata: false });
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  lines(doc.addPage([612, 792]), font, ['Broken XMP test document']);
+  doc.setTitle('Broken XMP test');
+  setXmp(doc, '<x:xmpmeta><rdf:RDF><rdf:Description BROKEN-XMP-TEXT');
+  return doc.save();
+}
+
+// Opens without a password, but its author locked it against copying and changes.
+async function ownerLocked() {
+  const doc = await PDFDocument.create();
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  lines(doc.addPage([612, 792]), font, ['Owner-locked test document', 'OWNER-LOCKED-PAGE']);
+  doc.encrypt({ userPassword: '', ownerPassword: 'owner-only-password', permissions: { copying: false, modifying: false, annotating: false } });
+  return doc.save();
+}
+
 const normalBytes = await normal();
 const files = {
   'normal.pdf': normalBytes,
@@ -189,6 +352,10 @@ const files = {
   'scripted.pdf': await scripted(),
   'links.pdf': await links(),
   'second.pdf': await second(),
+  'carries.pdf': await carries(),
+  'stale-xmp.pdf': await staleXmp(),
+  'broken-xmp.pdf': await brokenXmp(),
+  'owner-locked.pdf': await ownerLocked(),
   // Cut off halfway through.
   'damaged-truncated.pdf': normalBytes.slice(0, Math.floor(normalBytes.length / 2)),
   // The cross-reference table's position points nowhere.
