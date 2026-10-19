@@ -9,16 +9,16 @@ const tempDir = () => mkdtempSync(path.join(tmpdir(), 'sf-settings-'));
 
 describe('validateSettings', () => {
   it('accepts valid settings unchanged', () => {
-    const input = { version: 1, theme: 'light', textSize: 'larger', rememberRecent: true, recentFiles: ['C:\\a.pdf'] };
+    const input = { version: 1, theme: 'light', textSize: 'larger', rememberRecent: true, recentFiles: ['C:\\a.pdf'], authorName: 'Pat' };
     const { settings, problems } = validateSettings(input);
     expect(problems).toEqual([]);
     expect(settings).toEqual(input);
   });
 
   it('falls back to defaults for invalid values and lists each one', () => {
-    const { settings, problems } = validateSettings({ theme: 'neon', textSize: 99, rememberRecent: 'yes', recentFiles: 'C:\\a.pdf' });
+    const { settings, problems } = validateSettings({ theme: 'neon', textSize: 99, rememberRecent: 'yes', recentFiles: 'C:\\a.pdf', authorName: 7 });
     expect(settings).toEqual({ ...DEFAULT_SETTINGS, recentFiles: [] });
-    expect(problems.sort()).toEqual(['recentFiles', 'rememberRecent', 'textSize', 'theme']);
+    expect(problems.sort()).toEqual(['authorName', 'recentFiles', 'rememberRecent', 'textSize', 'theme']);
   });
 
   it('handles something that is not a settings object at all', () => {
@@ -39,6 +39,14 @@ describe('validateSettings', () => {
 
   it('keeps no recent files when remembering is off', () => {
     expect(validateSettings({ rememberRecent: false, recentFiles: ['C:\\a.pdf'] }).settings.recentFiles).toEqual([]);
+  });
+});
+
+describe('author name', () => {
+  it('is kept to one tidy line of at most 100 characters', () => {
+    expect(validateSettings({ authorName: '  Pat\n\tTester ' }).settings.authorName).toBe('Pat Tester');
+    expect(validateSettings({ authorName: 'x'.repeat(150) }).settings.authorName).toHaveLength(100);
+    expect(applyChange(DEFAULT_SETTINGS, { authorName: ' Sam ' }).authorName).toBe('Sam');
   });
 });
 

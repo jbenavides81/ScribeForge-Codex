@@ -1,33 +1,15 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch } from 'react';
 import type { OpenedFile } from '../../../shared/api';
-import { outputName } from '../../../engine/names';
-import type { BuildReport, PageItem } from '../../../engine/types';
+import type { PageItem } from '../../../engine/types';
 import { Icon, type IconName } from '../components/Icon';
-import { buildDocument } from './engineClient';
-import { canRemove, hasChanges, newKey, selectedTiles, type EditAction, type EditState, type Tile } from './editState';
-import { engineInput, type ConfirmRequest, type SourceDoc } from './sources';
+import { canRemove, newKey, selectedTiles, type EditAction, type EditState, type Tile } from './editState';
+import { plural } from './saving';
+import type { SourceDoc } from './sources';
 import { SplitDialog } from './SplitDialog';
 
 const THUMB_BOX = 150;
 const DRAG_TYPE = 'application/x-scribeforge-pages';
 const api = window.scribeforge;
-
-const fileNameOf = (p: string) => p.split(/[\\/]/).pop() ?? p;
-const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
-
-/** What to tell the person after saving. */
-function savedMessage(path: string, report: BuildReport): string {
-  const lines = [`Saved ${fileNameOf(path)} (${plural(report.pages, 'page')}).`];
-  const removed = report.linksRemoved + report.bookmarksRemoved;
-  if (removed > 0) {
-    lines.push(
-      `${plural(report.linksRemoved, 'link')} and ${plural(report.bookmarksRemoved, 'bookmark')} pointed to pages that aren't in the new file, so they were left out.`,
-    );
-  }
-  if (report.formFieldsDetached > 0) lines.push("Form fields look the same but can't be filled in, in the new file.");
-  if (report.actionsRemoved > 0) lines.push('Scripts and other actions in the pages were removed.');
-  return lines.join('\n');
-}
 
 function describe(tile: Tile, position: number, sources: SourceDoc[]): { label: string; detail: string } {
   const item = tile.item;
@@ -99,42 +81,41 @@ export function PagesView({
   edit,
   dispatch,
   sources,
-  saveNow,
-  onSaveStarted,
+  unsaved,
+  working,
+  onSaveAll,
+  onSaveSelected,
+  onSplit,
   addFiles,
-  confirm,
   onMessage,
-  onSaved,
 }: {
   edit: EditState;
   dispatch: Dispatch<EditAction>;
   sources: SourceDoc[];
-  /** Set when Save was asked for from the menu (Ctrl+S); cleared with onSaveStarted. */
-  saveNow: boolean;
-  onSaveStarted: () => void;
+  /** Page changes or annotations not saved yet. */
+  unsaved: boolean;
+  /** What's being saved right now, if anything. */
+  working: string | null;
+  onSaveAll: () => void;
+  onSaveSelected: (tiles: Tile[]) => void;
+  onSplit: (parts: number[][]) => void;
   /** Loads files (asking for passwords) and registers them as sources. */
   addFiles: (files: OpenedFile[]) => Promise<SourceDoc[]>;
-  confirm: (request: ConfirmRequest) => Promise<boolean>;
   onMessage: (text: string) => void;
-  onSaved: (path: string) => void;
 }) {
   const gridRef = useRef<HTMLOListElement>(null);
   const [focusKey, setFocusKey] = useState<string | null>(null);
-  const [working, setWorking] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
   const [splitting, setSplitting] = useState(false);
   const [drop, setDrop] = useState<{ key: string; side: 'before' | 'after' } | null>(null);
-  const primary = sources[0];
   const selected = selectedTiles(edit);
-  const dirty = hasChanges(edit);
   useThumbnails(gridRef, sources, edit.tiles);
-
-  const position = (key: string) => edit.tiles.findIndex((t) => t.key === key) + 1;
 
   // ---- adding pages ----
   const addTiles = useCallback(
     async (files: OpenedFile[]) => {
       if (files.length === 0) return;
-      setWorking('Adding pages…');
+      setAdding(true);
       try {
         const added = await addFiles(files);
         const tiles: Tile[] = added.flatMap((s) =>
@@ -142,7 +123,7 @@ export function PagesView({
         );
         dispatch({ type: 'add', tiles });
       } finally {
-        setWorking(null);
+        setAdding(false);
       }
     },
     [addFiles, dispatch],
@@ -172,69 +153,6 @@ export function PagesView({
       }
     }
     dispatch({ type: 'insert-blank', tile: { key: newKey('blank'), item: { kind: 'blank', width, height } } });
-  };
-
-  // ---- building and saving ----
-  const usedSources = (items: PageItem[]) => sources.filter((s) => items.some((i) => i.kind === 'page' && i.source === s.id));
-
-  const passwordCheck = async (items: PageItem[]): Promise<boolean> => {
-    const locked = usedSources(items).filter((s) => s.password);
-    if (locked.length === 0) return true;
-    return confirm({
-      title: "The new file won't have a password",
-      message: `${locked.map((s) => s.name).join(', ')} ${locked.length === 1 ? 'is' : 'are'} password-protected. The new file will open without a password.`,
-      confirmLabel: 'Save without a password',
-    });
-  };
-
-  const save = async (which: 'all' | 'selected') => {
-    if (working) return;
-    const tiles = which === 'all' ? edit.tiles : selected;
-    if (tiles.length === 0) return;
-    const items = tiles.map((t) => t.item);
-    if (!(await passwordCheck(items))) return;
-    const used = usedSources(items);
-    const name =
-      which === 'all' ? outputName(primary.name, used.length > 1 ? 'merged' : 'edited') : outputName(primary.name, { pages: tiles.map((t) => position(t.key)) });
-    setWorking('Making the new file…');
-    try {
-      const { bytes, report } = await buildDocument(used.map(engineInput), items);
-      setWorking('Saving…');
-      const result = await api.saveFile({ bytes, suggestedName: name, sourcePaths: sources.map((s) => s.path) });
-      if (result.ok) {
-        onMessage(savedMessage(result.path, report));
-        if (which === 'all') onSaved(result.path);
-      } else if (result.reason === 'failed') onMessage(result.message ?? "ScribeForge couldn't save the file.");
-    } catch (error) {
-      onMessage(`ScribeForge couldn't make the new file. ${error instanceof Error ? error.message : ''}`.trim());
-    } finally {
-      setWorking(null);
-    }
-  };
-
-  const split = async (parts: number[][]) => {
-    setSplitting(false);
-    const groups = parts.map((part) => part.map((n) => edit.tiles[n - 1]));
-    const items = groups.flat().map((t) => t.item);
-    if (!(await passwordCheck(items))) return;
-    setWorking('Making the new files…');
-    try {
-      const files: { name: string; bytes: Uint8Array }[] = [];
-      for (const [i, group] of groups.entries()) {
-        setWorking(`Making file ${i + 1} of ${groups.length}…`);
-        const groupItems = group.map((t) => t.item);
-        const { bytes } = await buildDocument(usedSources(groupItems).map(engineInput), groupItems);
-        files.push({ name: outputName(primary.name, { pages: parts[i] }), bytes });
-      }
-      setWorking('Saving…');
-      const result = await api.saveFiles({ files, sourcePaths: sources.map((s) => s.path) });
-      if (result.ok) onMessage(`Split into ${plural(result.paths.length, 'file')} in ${result.folder}.`);
-      else if (result.reason === 'failed') onMessage(result.message ?? "ScribeForge couldn't save the files.");
-    } catch (error) {
-      onMessage(`ScribeForge couldn't make the new files. ${error instanceof Error ? error.message : ''}`.trim());
-    } finally {
-      setWorking(null);
-    }
   };
 
   const remove = () => {
@@ -284,20 +202,6 @@ export function PagesView({
     }
   };
 
-  // ---- File > Save as new file (Ctrl+S) ----
-  // The ref makes sure one request starts one save, even when React runs this twice.
-  const saveStarted = useRef(false);
-  useEffect(() => {
-    if (!saveNow) {
-      saveStarted.current = false;
-      return;
-    }
-    if (saveStarted.current) return;
-    saveStarted.current = true;
-    onSaveStarted();
-    void save('all');
-  });
-
   // ---- dragging ----
   const onDragStart = (e: React.DragEvent, tile: Tile) => {
     const keys = edit.selected.includes(tile.key) ? edit.selected : [tile.key];
@@ -341,13 +245,14 @@ export function PagesView({
   };
 
   const tool = (icon: IconName, label: string, onClick: () => void, disabled = false, primaryStyle = false) => (
-    <button type="button" className={primaryStyle ? 'sf-button sf-primary' : 'sf-tool'} onClick={onClick} disabled={disabled || working !== null} title={label}>
+    <button type="button" className={primaryStyle ? 'sf-button sf-primary' : 'sf-tool'} onClick={onClick} disabled={disabled || busy} title={label}>
       <Icon name={icon} size={18} />
       <span>{label}</span>
     </button>
   );
 
   const none = selected.length === 0;
+  const busy = working !== null || adding;
   return (
     <div className="sf-pages">
       <div className="sf-toolbar sf-pages-toolbar" role="toolbar" aria-label="Pages">
@@ -363,13 +268,13 @@ export function PagesView({
         {tool('undo', 'Undo', () => dispatch({ type: 'undo' }), edit.past.length === 0)}
         {tool('redo', 'Redo', () => dispatch({ type: 'redo' }), edit.future.length === 0)}
         <span className="sf-toolbar-gap" />
-        {tool('extract', 'Save selected pages…', () => void save('selected'), none)}
+        {tool('extract', 'Save selected pages…', () => onSaveSelected(selected), none)}
         {tool('split', 'Split…', () => setSplitting(true), edit.tiles.length < 2)}
         <span className="sf-toolbar-fill" />
-        {tool('save', 'Save as new file…', () => void save('all'), false, true)}
+        {tool('save', 'Save as new file…', onSaveAll, false, true)}
       </div>
       <p className="sf-pages-status" data-testid="pages-status" aria-live="polite">
-        {working ?? [plural(edit.tiles.length, 'page'), `${selected.length} selected`, dirty ? 'Changes not saved yet' : 'No changes'].join(' · ')}
+        {working ?? (adding ? 'Adding pages…' : [plural(edit.tiles.length, 'page'), `${selected.length} selected`, unsaved ? 'Changes not saved yet' : 'No changes'].join(' · '))}
       </p>
       <ol
         ref={gridRef}
@@ -401,7 +306,7 @@ export function PagesView({
               tabIndex={(focusKey ?? edit.tiles[0]?.key) === tile.key ? 0 : -1}
               className="sf-page-tile"
               data-drop={drop?.key === tile.key ? drop.side : undefined}
-              draggable={working === null}
+              draggable={!busy}
               onClick={(e) => {
                 setFocusKey(tile.key);
                 dispatch({ type: 'select', key: tile.key, mode: e.shiftKey ? 'range' : e.ctrlKey || e.metaKey ? 'toggle' : 'only' });
@@ -438,7 +343,16 @@ export function PagesView({
           );
         })}
       </ol>
-      {splitting && <SplitDialog pageCount={edit.tiles.length} onSplit={(parts) => void split(parts)} onCancel={() => setSplitting(false)} />}
+      {splitting && (
+        <SplitDialog
+          pageCount={edit.tiles.length}
+          onSplit={(parts) => {
+            setSplitting(false);
+            onSplit(parts);
+          }}
+          onCancel={() => setSplitting(false)}
+        />
+      )}
     </div>
   );
 }

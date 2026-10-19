@@ -4,7 +4,12 @@ An open-source, offline PDF toolkit for Windows: view, organise, annotate, inspe
 
 ScribeForge never sends anything over the network, and it never changes the files you open: edits save to new files.
 
-**Status:** stops 1a and 1b are built. You can open, view, search and copy from PDFs, and on the Pages screen merge, split, reorder, rotate, delete, extract and insert blank pages, always saving to a new file. Version 0.2.0.
+**Status:** stops 1a, 1b and 1c are built. Version 0.3.0. You can:
+- open, view, search and copy from PDFs;
+- on the Pages screen, merge, split, reorder, rotate, delete, extract and insert blank pages;
+- on the Document screen, highlight, underline and strike out text, and add notes and text boxes.
+
+Everything saves to a new file.
 
 | Document | What it is |
 |---|---|
@@ -68,9 +73,9 @@ npm run trial:reset
 |---|---|
 | `src/main/` | The app process: window, menus, file dialogs, reading files, settings, the network guard |
 | `src/preload/` | The small bridge the screens are allowed to call |
-| `src/renderer/` | The screens (React), styles, the pdf.js viewer, and the Pages screen with its worker |
-| `src/engine/` | The PDF engine for the page tools: plain TypeScript, run in a worker inside the window and in the unit tests |
-| `src/shared/` | Code used by both sides: themes (the only place colours are defined), settings rules, link rules, pdf.js safety options |
+| `src/renderer/` | The screens (React), styles, the pdf.js viewer, annotating, and the Pages screen with its worker |
+| `src/engine/` | The PDF engine for the page tools and annotations: plain TypeScript, run in a worker inside the window and in the unit tests |
+| `src/shared/` | Code used by both sides: themes and the annotation colours (the only places colours are defined), settings rules, link rules, pdf.js safety options |
 | `tests/unit/` | Unit tests (Vitest) |
 | `tests/e2e/` | Whole-app tests (Playwright), for the built app and the installed app |
 | `scripts/` | Trial mode, test PDFs, icon and notices |
@@ -88,6 +93,7 @@ npm run trial:reset
     - Links and bookmarks point at the right pages of the new file, or are left out if their page isn't there.
     - Scripts and other actions in the pages are removed.
     - Saving over the original asks a second, plain question first.
+- **Annotations are standard PDF annotations,** so Edge, Acrobat and other readers show them. They're only added to the new file when you save. Your name goes on them only if you type it in Settings.
 
 ## Interim parts, to match BC6 later
 

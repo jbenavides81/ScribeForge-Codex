@@ -25,7 +25,13 @@ export type IconName =
   | 'blank'
   | 'extract'
   | 'split'
-  | 'save';
+  | 'save'
+  | 'select'
+  | 'highlight'
+  | 'underline'
+  | 'strikeout'
+  | 'note'
+  | 'textbox';
 
 const PATHS: Record<IconName, string[]> = {
   logo: [
@@ -59,6 +65,12 @@ const PATHS: Record<IconName, string[]> = {
   extract: ['M16 6 H38 L50 18 V58 H16 Z', 'M38 6 V18 H50', 'M33 48 V26', 'M24 35 L33 26 L42 35'],
   split: ['M8 8 H26 V56 H8 Z', 'M38 8 H56 V56 H38 Z', 'M32 4 V60'],
   save: ['M10 8 H46 L56 18 V56 H10 Z', 'M20 8 V22 H42 V8', 'M20 56 V36 H44 V56'],
+  select: ['M16 8 L16 52 L28 40 L36 58 L44 54 L36 37 L52 36 Z'],
+  highlight: ['M14 50 L36 14 L50 22 L28 58 Z', 'M8 58 H56'],
+  underline: ['M20 8 V30 A12 12 0 0 0 44 30 V8', 'M12 56 H52'],
+  strikeout: ['M44 14 A12 9 0 0 0 20 20 C 20 30 44 30 44 42 A12 9 0 0 1 20 48', 'M10 32 H54'],
+  note: ['M8 10 H56 V44 H28 L16 56 V44 H8 Z', 'M18 22 H46', 'M18 32 H38'],
+  textbox: ['M6 12 H58 V52 H6 Z', 'M20 22 H44', 'M32 22 V44'],
 };
 
 export function Icon({ name, size = 20 }: { name: IconName; size?: number }) {

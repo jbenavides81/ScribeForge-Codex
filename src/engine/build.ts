@@ -10,10 +10,11 @@
 // 3. Scripts and other risky actions are removed; form fields keep their look but are detached.
 // 4. A final check cuts any remaining reference to a page outside the page list, and everything
 //    no longer reachable is swept out before saving.
-import { degrees, PDFArray, PDFDict, PDFDocument, PDFString, type PDFObject, type PDFPage } from '@cantoo/pdf-lib';
+import { degrees, PDFArray, PDFDict, PDFDocument, PDFString, type PDFFont, type PDFObject, type PDFPage } from '@cantoo/pdf-lib';
+import { addAnnotations } from './annotate';
 import { cutStrayPageReferences, destinationTarget, N, nameOf, sweepUnreachable } from './objects';
 import { readOutline, writeOutline, type OutlineNode, type PlacedBookmark } from './outline';
-import { emptyReport, type BuildReport, type PageItem, type Rotation, type SourceInput } from './types';
+import { emptyReport, type AnnotationInput, type BuildReport, type PageItem, type Rotation, type SourceInput } from './types';
 
 const PLACEHOLDER = 'ScribeForge-page:';
 
@@ -137,7 +138,11 @@ function normalise(angle: number): Rotation {
   return ((((Math.round(angle / 90) * 90) % 360) + 360) % 360) as Rotation;
 }
 
-export async function buildPdf(sources: SourceInput[], items: PageItem[]): Promise<{ bytes: Uint8Array; report: BuildReport }> {
+export async function buildPdf(
+  sources: SourceInput[],
+  items: PageItem[],
+  annotations: AnnotationInput[] = [],
+): Promise<{ bytes: Uint8Array; report: BuildReport }> {
   if (items.length === 0) throw new Error('A PDF needs at least one page.');
   const report = emptyReport();
 
@@ -191,6 +196,19 @@ export async function buildPdf(sources: SourceInput[], items: PageItem[]): Promi
   }
 
   for (const page of placedPages) resolvePlaceholders(out, page, where, report);
+
+  // Annotations added in ScribeForge follow their page; those whose page isn't here are left out.
+  const byPage = new Map<string, AnnotationInput[]>();
+  for (const a of annotations) {
+    const key = `${a.source}:${a.index}`;
+    byPage.set(key, [...(byPage.get(key) ?? []), a]);
+  }
+  const fonts: { helvetica?: PDFFont } = {};
+  for (const [key, list] of byPage) {
+    const page = where.get(key);
+    if (page) report.annotationsAdded += await addAnnotations(out, page, list, fonts);
+    else report.annotationsLeftOut += list.length;
+  }
 
   // Bookmarks: one source keeps its own; merged files each get a bookmark named after the file.
   const sourceOrder = [...needed.keys()];

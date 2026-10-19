@@ -61,9 +61,9 @@ npm run trial
 
 ## Unsaved changes
 
-21. Rotate any page, then click the **×** in the Document toolbar (or press Ctrl+W). **"Discard your page changes?"** Click **Keep editing**. **Nothing closes.**
+21. Rotate any page, then click the **×** in the Document toolbar (or press Ctrl+W). **"Discard your changes?"** Click **Keep editing**. **Nothing closes.**
 22. Open another PDF from **Start**. **The same question.** Click **Discard changes**. **The other PDF opens.**
-23. Rotate a page, then close the ScribeForge window with its own **×**. **Windows asks about page changes that aren't saved yet.** Click **Keep editing**. **The window stays open.** Close it again and choose **Close without saving**. **ScribeForge closes.** Start it again with `npm run trial`.
+23. Rotate a page, then close the ScribeForge window with its own **×**. **Windows asks about changes that aren't saved yet.** Click **Keep editing**. **The window stays open.** Close it again and choose **Close without saving**. **ScribeForge closes.** Start it again with `npm run trial`.
 
 ## Passwords, dropping files, large files
 

@@ -1,4 +1,4 @@
-import type { BuildReport, PageItem, SourceInput } from '../../../engine/types';
+import type { AnnotationInput, BuildReport, PageItem, SourceInput } from '../../../engine/types';
 
 type Reply = { id: number; ok: true; bytes: Uint8Array; report: BuildReport } | { id: number; ok: false; message: string };
 
@@ -28,10 +28,14 @@ function engine(): Worker {
 }
 
 /** Builds a new PDF from pages of the sources. The sources' bytes are copied, never changed. */
-export function buildDocument(sources: SourceInput[], items: PageItem[]): Promise<{ bytes: Uint8Array; report: BuildReport }> {
+export function buildDocument(
+  sources: SourceInput[],
+  items: PageItem[],
+  annotations: AnnotationInput[] = [],
+): Promise<{ bytes: Uint8Array; report: BuildReport }> {
   const id = ++nextId;
   return new Promise((resolve, reject) => {
     waiting.set(id, { resolve, reject });
-    engine().postMessage({ id, sources: sources.map((s) => ({ ...s, bytes: s.bytes.slice() })), items });
+    engine().postMessage({ id, sources: sources.map((s) => ({ ...s, bytes: s.bytes.slice() })), items, annotations });
   });
 }

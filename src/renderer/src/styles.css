@@ -42,7 +42,7 @@ p { margin: 0 0 0.75rem; }
 
 /* ---------- controls ---------- */
 
-button, input, select { font: inherit; color: inherit; }
+button, input, select, textarea { font: inherit; color: inherit; }
 
 .sf-button {
   display: inline-flex;
@@ -82,7 +82,7 @@ button, input, select { font: inherit; color: inherit; }
 .sf-icon-button:disabled { color: var(--sf-muted); cursor: default; }
 .sf-icon-button[aria-pressed='true'] { background: var(--sf-raised); border-color: var(--sf-outline); }
 
-input[type='text'], input[type='search'], input[type='password'], select {
+input[type='text'], input[type='search'], input[type='password'], select, textarea {
   min-height: 2.25rem;
   padding: 0.25rem 0.5rem;
   border: 1px solid var(--sf-outline);
@@ -91,6 +91,7 @@ input[type='text'], input[type='search'], input[type='password'], select {
   color: var(--sf-text);
 }
 select { width: auto; }
+textarea { width: 100%; resize: vertical; line-height: 1.4; }
 
 /* Radio buttons and checkboxes drawn in theme colours, so they meet the contrast rules in every
    theme (Windows' own ones are too faint on black). */
@@ -343,6 +344,91 @@ input[type='checkbox']:checked::before {
   border-bottom: 1px solid var(--sf-accent);
 }
 
+/* ---------- annotating ---------- */
+
+.sf-annotate-bar { row-gap: 0.35rem; }
+.sf-tool[aria-pressed='true'] { background: var(--sf-raised); border-color: var(--sf-link); font-weight: 600; }
+.sf-hint { color: var(--sf-muted); margin-right: 0.5rem; }
+
+.sf-swatches { display: inline-flex; align-items: center; gap: 0.35rem; }
+.sf-swatch {
+  width: 1.6rem;
+  height: 1.6rem;
+  padding: 0;
+  border: 2px solid var(--sf-swatch-ink);
+  border-radius: 50%;
+  background: var(--sf-swatch);
+  cursor: pointer;
+}
+.sf-swatch[aria-checked='true'] { outline: 2px solid var(--sf-link); outline-offset: 2px; }
+
+/* Note and text box tools: the next click on a page places one. */
+.sf-placing .page, .sf-placing .textLayer, .sf-placing .textLayer span { cursor: crosshair; }
+
+/*
+ * Annotations made in ScribeForge, drawn over the pages until they're saved into the new file.
+ * The whole layer multiplies onto the page, the way the saved highlights do in PDF readers.
+ */
+.sf-annot-layer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  z-index: 5;
+  pointer-events: none;
+  mix-blend-mode: multiply;
+}
+.sf-annot-part, .sf-annot-note, .sf-annot-text { position: absolute; }
+.sf-annot-interactive .sf-annot-part,
+.sf-annot-interactive .sf-annot-note,
+.sf-annot-interactive .sf-annot-text { pointer-events: auto; cursor: pointer; }
+.sf-annot:focus-visible { outline: none; }
+.sf-annot-highlight .sf-annot-part { background: var(--sf-annot-colour); }
+.sf-annot-line { position: absolute; background: var(--sf-annot-colour); }
+.sf-annot-note {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--sf-annot-ink);
+  border-radius: 3px;
+  background: var(--sf-annot-colour);
+  color: var(--sf-annot-ink);
+}
+/* Arial is the closest Windows font to the Helvetica the saved text box uses. Inter's ss02 is
+   switched off: in Arial it picks different letter shapes. */
+.sf-annot-text {
+  font-family: Arial, 'Helvetica', sans-serif;
+  font-feature-settings: normal;
+  line-height: 1.2;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--sf-annot-colour);
+}
+.sf-annot-text[data-empty='true'] { outline: 1px dashed var(--sf-annot-ink); }
+.sf-annot[data-selected='true'] .sf-annot-part,
+.sf-annot-note[data-selected='true'],
+.sf-annot-text[data-selected='true'],
+.sf-annot:focus-visible .sf-annot-part,
+.sf-annot-note:focus-visible,
+.sf-annot-text:focus-visible { outline: 2px solid var(--sf-link); outline-offset: 1px; }
+
+.sf-annot-panel {
+  position: absolute;
+  top: 0.75rem;
+  right: 1.5rem;
+  z-index: 20;
+  width: min(20rem, calc(100% - 3rem));
+  padding: 0.75rem 1rem 1rem;
+  border: 1px solid var(--sf-outline);
+  border-radius: 10px;
+  background: var(--sf-panel);
+  color: var(--sf-text);
+}
+.sf-annot-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-bottom: 0.5rem; }
+.sf-annot-panel h2 { margin: 0; font-size: 1rem; }
+.sf-annot-panel .sf-dialog-buttons { margin-top: 0.75rem; }
+
 /* ---------- pages ---------- */
 
 .sf-dot {
@@ -433,6 +519,7 @@ input[type='checkbox']:checked::before {
 .sf-dialog-buttons { display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1.25rem; }
 .sf-field { display: flex; flex-direction: column; gap: 0.35rem; margin: 0.75rem 0; }
 .sf-field input { width: 100%; }
+.sf-field-narrow { max-width: 24rem; }
 .sf-address {
   padding: 0.5rem 0.75rem;
   border: 1px solid var(--sf-line);

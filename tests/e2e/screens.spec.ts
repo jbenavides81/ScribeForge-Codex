@@ -17,6 +17,34 @@ test('screenshots of every screen in every theme', async ({}, info) => {
   await win.setViewportSize({ width: 1280, height: 800 });
   await openFixture(run, 'links.pdf');
   await waitForFirstPage(win);
+  // Annotations of each kind, with one selected, so the Document screen shows them and the panel.
+  const annotate = win.getByRole('toolbar', { name: 'Annotate' });
+  const page1 = win.locator('.page[data-page-number="1"]');
+  const markText = async (toolName: string, needle: string) => {
+    await annotate.getByRole('button', { name: toolName, exact: true }).click();
+    await page1.locator('.textLayer span', { hasText: needle }).first().evaluate((span) => {
+      const range = document.createRange();
+      range.selectNodeContents(span);
+      window.getSelection()?.removeAllRanges();
+      window.getSelection()?.addRange(range);
+    });
+    await win.getByTestId('viewer').dispatchEvent('mouseup');
+  };
+  const place = async (toolName: string, fx: number, fy: number, text: string) => {
+    await annotate.getByRole('button', { name: toolName, exact: true }).click();
+    const box = (await page1.boundingBox())!;
+    await win.mouse.click(box.x + box.width * fx, box.y + box.height * fy);
+    await win.getByTestId('annot-panel').getByRole('textbox').fill(text);
+    await win.getByTestId('annot-panel').getByRole('button', { name: 'Done' }).click();
+  };
+  await markText('Highlight', 'UNIQUE-PAGE-1');
+  await annotate.getByRole('radio', { name: 'Blue' }).click();
+  await markText('Underline', 'This is page 1');
+  await place('Note', 0.55, 0.12, 'A note');
+  await annotate.getByRole('radio', { name: 'Red' }).click();
+  await place('Text box', 0.12, 0.3, 'Approved by the team');
+  await annotate.getByRole('button', { name: 'Select', exact: true }).click();
+  await win.locator('.sf-annot-highlight .sf-annot-part').first().click();
   // Some page changes, so the Pages screen shows selection, rotation and the unsaved marker.
   await goTo(win, 'Pages');
   await win.getByRole('option', { name: /^Page 1/ }).click();

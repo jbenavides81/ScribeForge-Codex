@@ -72,6 +72,29 @@ export async function pageTexts(bytes: Uint8Array, password?: string): Promise<s
   return out;
 }
 
+/** Every annotation other readers would show (not links, form fields or pop-ups), as pdf.js reads it. */
+export async function annotations(bytes: Uint8Array) {
+  const doc = await pdfjs.getDocument({ data: bytes.slice(), standardFontDataUrl: FONTS, useWorkerFetch: false, verbosity: 0 }).promise;
+  const out: { page: number; subtype: string; contents: string; author: string; colour: number[]; quads: number; quadPoints: number[]; rect: number[] }[] = [];
+  for (let i = 1; i <= doc.numPages; i++) {
+    for (const a of await (await doc.getPage(i)).getAnnotations()) {
+      if (a.subtype === 'Link' || a.subtype === 'Widget' || a.subtype === 'Popup') continue;
+      out.push({
+        page: i,
+        subtype: a.subtype,
+        contents: a.contentsObj?.str ?? '',
+        author: a.titleObj?.str ?? '',
+        colour: a.color ? [...a.color] : [],
+        quads: a.quadPoints ? a.quadPoints.length / 8 : 0,
+        quadPoints: a.quadPoints ? [...a.quadPoints] : [],
+        rect: a.rect,
+      });
+    }
+  }
+  await doc.loadingTask.destroy();
+  return out;
+}
+
 /** "UNIQUE-PAGE-3" → 3, for each page (0 for a page without one). */
 export async function pageIds(bytes: Uint8Array): Promise<string[]> {
   return (await pageTexts(bytes)).map((t) => /(UNIQUE-PAGE-\d|SECOND-DOC-PAGE-\d)/.exec(t)?.[1] ?? 'blank');
@@ -157,4 +180,14 @@ export async function rotations(bytes: Uint8Array): Promise<number[]> {
 export async function sizes(bytes: Uint8Array): Promise<[number, number][]> {
   const doc = await PDFDocument.load(bytes, { updateMetadata: false });
   return doc.getPages().map((p) => [Math.round(p.getWidth()), Math.round(p.getHeight())]);
+}
+
+/** Where a piece of text sits on a page, in the page's own (unturned) coordinates. */
+export async function textPosition(bytes: Uint8Array, page: number, needle: string): Promise<{ x: number; y: number; width: number; height: number } | null> {
+  const doc = await pdfjs.getDocument({ data: bytes.slice(), standardFontDataUrl: FONTS, useWorkerFetch: false }).promise;
+  const content = await (await doc.getPage(page)).getTextContent();
+  const item = content.items.find((t) => 'str' in t && t.str.includes(needle));
+  await doc.loadingTask.destroy();
+  if (!item || !('transform' in item)) return null;
+  return { x: item.transform[4], y: item.transform[5], width: item.width, height: item.height };
 }

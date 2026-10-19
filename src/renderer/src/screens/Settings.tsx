@@ -1,6 +1,6 @@
-import type { CSSProperties } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import type { SettingsChange } from '../../../shared/api';
-import type { Settings as AppSettings, TextSize } from '../../../shared/settings';
+import { MAX_AUTHOR_NAME, type Settings as AppSettings, type TextSize } from '../../../shared/settings';
 import { cssVariables, presetFor, THEME_CHOICES, type ThemeId } from '../../../shared/themes';
 
 const TEXT_SIZES: { id: TextSize; name: string }[] = [
@@ -22,6 +22,32 @@ function Preview({ theme }: { theme: ThemeId }) {
         </span>
       ))}
     </span>
+  );
+}
+
+/** Saved when the person leaves the field or presses Enter, not on every keystroke. */
+function AuthorName({ value, onSave }: { value: string; onSave: (name: string) => void }) {
+  const [draft, setDraft] = useState(value);
+  useEffect(() => setDraft(value), [value]);
+  const save = () => {
+    if (draft !== value) onSave(draft);
+  };
+  return (
+    <label className="sf-field sf-field-narrow">
+      <span>Your name on annotations</span>
+      <input
+        type="text"
+        value={draft}
+        maxLength={MAX_AUTHOR_NAME}
+        autoComplete="off"
+        spellCheck={false}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={save}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') save();
+        }}
+      />
+    </label>
   );
 }
 
@@ -79,6 +105,14 @@ export function Settings({
             </label>
           ))}
         </div>
+      </fieldset>
+
+      <fieldset className="sf-section">
+        <legend>
+          <h2>Annotations</h2>
+        </legend>
+        <AuthorName value={settings.authorName} onSave={(authorName) => onChange({ authorName })} />
+        <p className="sf-muted">Other PDF readers show this as the author of your highlights, notes and text boxes. Leave it empty to add no name.</p>
       </fieldset>
 
       <fieldset className="sf-section">

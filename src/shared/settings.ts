@@ -8,9 +8,12 @@ export interface Settings {
   textSize: TextSize;
   rememberRecent: boolean;
   recentFiles: string[];
+  /** Saved as the author of annotations. Empty: annotations have no author. */
+  authorName: string;
 }
 
 export const MAX_RECENT = 10;
+export const MAX_AUTHOR_NAME = 100;
 
 export const DEFAULT_SETTINGS: Settings = {
   version: 1,
@@ -18,6 +21,7 @@ export const DEFAULT_SETTINGS: Settings = {
   textSize: 'standard',
   rememberRecent: true,
   recentFiles: [],
+  authorName: '',
 };
 
 const THEMES: readonly ThemeId[] = ['cathedral', 'light', 'dark', 'high-contrast', 'system'];
@@ -56,8 +60,21 @@ export function validateSettings(raw: unknown): { settings: Settings; problems: 
       problems.push('recentFiles');
     }
   }
+  if (r.authorName !== undefined) {
+    if (typeof r.authorName === 'string') settings.authorName = cleanName(r.authorName);
+    else problems.push('authorName');
+  }
   if (!settings.rememberRecent) settings.recentFiles = [];
   return { settings, problems };
+}
+
+/** One line, no control characters, at most MAX_AUTHOR_NAME characters. */
+export function cleanName(name: string): string {
+  return name
+    .replace(/\p{Cc}+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, MAX_AUTHOR_NAME);
 }
 
 /** Windows paths are case-insensitive. */

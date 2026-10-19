@@ -200,7 +200,7 @@ test('unsaved changes: closing, opening another file and closing the window all 
   await goTo(win, 'Document');
   await win.getByRole('button', { name: 'Close document' }).click();
   const confirm = win.getByTestId('confirm-dialog');
-  await expect(confirm).toContainText('Discard your page changes?');
+  await expect(confirm).toContainText('Discard your changes?');
   await confirm.getByRole('button', { name: 'Keep editing' }).click();
   await expect(win.locator('.sf-doc-name')).toHaveText('links.pdf');
 

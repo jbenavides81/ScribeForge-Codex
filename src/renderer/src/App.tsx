@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import type { AppInfo, MenuCommand, OpenedFile, OpenResult, RecentFile, SettingsChange } from '../../shared/api';
 import type { Settings as AppSettings } from '../../shared/settings';
+import { annotReducer, emptyAnnots, hasAnnotChanges } from './annotate/annotState';
 import { applyAppearance, onSystemThemeChange } from './appearance';
 import { Dialog } from './components/Dialog';
 import { Icon, type IconName } from './components/Icon';
 import { editReducer, emptyEdit, hasChanges, newKey, type Tile } from './pages/editState';
 import { PagesView } from './pages/PagesView';
+import { useSaving } from './pages/saving';
 import type { ConfirmRequest, SourceDoc } from './pages/sources';
 import { About } from './screens/About';
 import { Settings } from './screens/Settings';
@@ -67,13 +69,15 @@ export function App() {
   const [confirming, setConfirming] = useState<(ConfirmRequest & { resolve: (ok: boolean) => void }) | null>(null);
   const [link, setLink] = useState<string | null>(null);
   const [command, setCommand] = useState<{ name: MenuCommand; seq: number } | null>(null);
-  const [saveNow, setSaveNow] = useState(false);
+  const [annots, annotDispatch] = useReducer(annotReducer, emptyAnnots);
   const docRef = useRef<OpenDocument | null>(null);
   docRef.current = doc;
   const addedRef = useRef<SourceDoc[]>([]);
   addedRef.current = added;
   const editRef = useRef(edit);
   editRef.current = edit;
+  const annotsRef = useRef(annots);
+  annotsRef.current = annots;
   const nextDocId = useRef(0);
   const nextSourceId = useRef(0);
 
@@ -92,8 +96,9 @@ export function App() {
     return onSystemThemeChange(() => applyAppearance(settings));
   }, [settings]);
 
-  // Closing the window asks first while page changes aren't saved.
-  const dirty = hasChanges(edit);
+  // Closing the window asks first while page changes or annotations aren't saved.
+  const pagesChanged = hasChanges(edit);
+  const dirty = pagesChanged || hasAnnotChanges(annots);
   useEffect(() => api.setUnsaved(dirty), [dirty]);
 
   const changeSettings = useCallback(async (change: SettingsChange) => {
@@ -106,13 +111,13 @@ export function App() {
     [],
   );
 
-  /** Runs `action` now, or after the person agrees to lose unsaved page changes. */
+  /** Runs `action` now, or after the person agrees to lose unsaved changes. */
   const unlessUnsaved = useCallback(
     async (action: () => void | Promise<void>) => {
-      if (hasChanges(editRef.current)) {
+      if (hasChanges(editRef.current) || hasAnnotChanges(annotsRef.current)) {
         const ok = await confirm({
-          title: 'Discard your page changes?',
-          message: "You have page changes that aren't saved yet. If you continue, they are lost.",
+          title: 'Discard your changes?',
+          message: "You have page changes or annotations that aren't saved yet. If you continue, they are lost.",
           confirmLabel: 'Discard changes',
           cancelLabel: 'Keep editing',
         });
@@ -139,6 +144,7 @@ export function App() {
     setDoc(null);
     setAdded([]);
     dispatch({ type: 'reset', tiles: [] });
+    annotDispatch({ type: 'reset' });
     setScreen('start');
     release([current?.pdf, ...extra.map((s) => s.pdf)]);
   }, []);
@@ -159,6 +165,7 @@ export function App() {
       setDoc({ id, pdf, name: file.name, path: file.path, bytes: file.bytes, password: used });
       setAdded([]);
       dispatch({ type: 'reset', tiles: pageTiles(`doc${id}`, pdf.numPages) });
+      annotDispatch({ type: 'reset' });
       setScreen('document');
       release([previous?.pdf, ...extra.map((s) => s.pdf)]);
     } catch (error) {
@@ -220,10 +227,7 @@ export function App() {
           if (docRef.current) setScreen('pages');
           break;
         case 'save':
-          if (docRef.current) {
-            setScreen('pages');
-            setSaveNow(true);
-          }
+          if (docRef.current) void saveAllRef.current();
           break;
         default:
           if (docRef.current) {
@@ -259,6 +263,18 @@ export function App() {
     [doc, added],
   );
 
+  const saving = useSaving({
+    sources,
+    edit,
+    annots,
+    authorName: settings?.authorName ?? '',
+    confirm,
+    onMessage: setMessage,
+    onSaved: (path) => void api.openPath(path).then(handleResult),
+  });
+  const saveAllRef = useRef(saving.saveAll);
+  saveAllRef.current = saving.saveAll;
+
   if (!settings || !info) return null;
 
   const nav: { id: Screen; label: string; icon: IconName; disabled?: boolean }[] = [
@@ -290,7 +306,7 @@ export function App() {
               >
                 <Icon name={item.icon} />
                 {item.label}
-                {item.id === 'pages' && dirty && <span className="sf-dot" aria-hidden="true" title="Changes not saved yet" />}
+                {item.id === 'pages' && pagesChanged && <span className="sf-dot" aria-hidden="true" title="Changes not saved yet" />}
               </button>
             </li>
           ))}
@@ -336,8 +352,13 @@ export function App() {
               key={doc.id}
               pdf={doc.pdf}
               name={doc.name}
-              changed={dirty}
+              changed={pagesChanged}
               command={command}
+              annots={annots}
+              annotDispatch={annotDispatch}
+              active={screen === 'document'}
+              working={saving.working}
+              onSave={() => void saving.saveAll()}
               onAskLink={setLink}
               onRefusedLink={(address) => setMessage(`This link can't be opened from ScribeForge: ${address}`)}
               onClose={() => void closeWithCheck()}
@@ -349,12 +370,13 @@ export function App() {
             edit={edit}
             dispatch={dispatch}
             sources={sources}
-            saveNow={saveNow}
-            onSaveStarted={() => setSaveNow(false)}
+            unsaved={dirty}
+            working={saving.working}
+            onSaveAll={() => void saving.saveAll()}
+            onSaveSelected={(tiles) => void saving.saveSelected(tiles)}
+            onSplit={(parts) => void saving.split(parts)}
             addFiles={addFiles}
-            confirm={confirm}
             onMessage={setMessage}
-            onSaved={(path) => void api.openPath(path).then(handleResult)}
           />
         )}
         {screen === 'settings' && (
