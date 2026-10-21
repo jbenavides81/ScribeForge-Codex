@@ -19,6 +19,7 @@ Everything saves to a new file. Before saving, ScribeForge shows what the new fi
 | [docs/ScribeForge_Claude_Code_Prompt.md](docs/ScribeForge_Claude_Code_Prompt.md) | The build prompt Claude Code works from |
 | [docs/Roadmap.md](docs/Roadmap.md) | Phases and stops, with each stop's required checks |
 | [docs/Phase0_Plan.md](docs/Phase0_Plan.md) | Phase 0 (approved): test results, dependencies, design and decisions |
+| [docs/Plan_Phase2.md](docs/Plan_Phase2.md) | Phase 2 (approved): the Forge tools, with test results and decisions |
 | [docs/manual-tests/](docs/manual-tests/) | Step-by-step scripts for trying each stop, and [v1-full.md](docs/manual-tests/v1-full.md) for the installed app |
 | [content/help/](content/help/) | The help pages shown in the app (plain Markdown; edit them without touching code) |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | How to work on ScribeForge |
