@@ -22,6 +22,10 @@ PDFs can hold more than their pages: details such as the author, attached files,
 
 A black box drawn over text doesn't remove the text. ScribeForge's redaction makes every marked page into a picture, so the text is gone. See [Redacting](06-redacting.md).
 
+## Command line
+
+The [command line](12-command-line.md) keeps the same rules: no internet, the files you give it are never changed, scripts in PDFs never run, and passwords are never saved.
+
 ## Open source
 
 ScribeForge is open-source software under the Apache License 2.0. The licences of the parts it's built from are on the **About** screen.

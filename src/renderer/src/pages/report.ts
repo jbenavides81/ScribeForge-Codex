@@ -36,7 +36,7 @@ export function savedMessage(path: string, report: BuildReport): string {
 /** What redacting did and what the redacted file leaves out, for the summary before saving. */
 export function redactionNotes(report: BuildReport, marks: number, marksLeftOut: number, dpi: number): string[] {
   const lines = [
-    `${plural(marks, 'mark')} on ${plural(report.pagesRedacted, 'page')} ${report.pagesRedacted === 1 ? 'is' : 'are'} blacked out. ${
+    `${plural(marks, 'mark')} on ${plural(report.pagesRedacted, 'page')} ${marks === 1 ? 'is' : 'are'} blacked out. ${
       report.pagesRedacted === 1 ? 'That page is now a picture' : 'Those pages are now pictures'
     } (${dpi} dpi): ${report.pagesRedacted === 1 ? 'its' : 'their'} text can't be selected, searched or copied.`,
   ];

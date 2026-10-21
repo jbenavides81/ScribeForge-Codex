@@ -13,7 +13,22 @@ extraResources:
     to: THIRD-PARTY-NOTICES.md
   - from: LICENSE
     to: LICENSE
+# The command-line launcher, next to ScribeForge.exe.
+extraFiles:
+  - from: build/scribeforge.cmd
+    to: scribeforge.cmd
 asar: true
+# Electron's built-in switches, set in the program file itself (Phase 2 plan, 2a). The inspect
+# switch stays on: the whole-app tests drive the installed build through it.
+electronFuses:
+  runAsNode: false
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: true
+  onlyLoadAppFromAsar: true
+  enableEmbeddedAsarIntegrityValidation: true
+  grantFileProtocolExtraPrivileges: false
+  enableCookieEncryption: false
+  loadBrowserProcessSpecificV8Snapshot: false
 npmRebuild: false
 win:
   target: nsis

@@ -4,12 +4,13 @@ An open-source, offline PDF toolkit for Windows: view, organise, annotate, inspe
 
 ScribeForge never sends anything over the network, and it never changes the files you open: edits save to new files.
 
-**Status:** Phase 1 is complete. Version 1.0.0. You can:
+**Status:** Phase 2 has started. Version 1.1.0. You can:
 - open, view, search and copy from PDFs;
 - on the Pages screen, merge, split, reorder, rotate, delete, extract and insert blank pages;
 - on the Document screen, highlight, underline and strike out text, and add notes and text boxes;
 - on the Details screen, see and change a file's title, author, subject and keywords, and see everything else it carries: attached files, form fields, comments, scripts, bookmarks, hidden layers and links;
-- on the Document screen in Redact mode, mark areas, selected text, or every match of a search, check the marks, and save a redacted copy.
+- on the Document screen in Redact mode, mark areas, selected text, or every match of a search, check the marks, and save a redacted copy;
+- from Command Prompt or PowerShell, merge, split, rotate, extract, show details and redact without opening the window (see [Command line](#command-line)).
 
 Everything saves to a new file. Before saving, ScribeForge shows what the new file will carry (you can turn this off in Settings). Help is built in: press F1.
 
@@ -30,11 +31,37 @@ Everything saves to a new file. Before saving, ScribeForge shows what the new fi
    ```bash
    npm run dist
    ```
-   It's saved as `release\ScribeForge Setup 1.0.0.exe`.
+   It's saved as `release\ScribeForge Setup 1.1.0.exe`.
 2. Run it. The installer isn't signed, so Windows shows "Windows protected your PC" the first time: click **More info**, then **Run anyway**.
 3. Choose **Only for me** and where to install it (your user folder by default; no administrator rights needed). ScribeForge is then in the Start menu.
 
 To remove it, use **Settings > Apps > Installed apps > ScribeForge > Uninstall** in Windows. Your settings stay in `%APPDATA%\ScribeForge`; delete that folder too if you want them gone.
+
+## Command line
+
+The installer puts `scribeforge.cmd` next to ScribeForge.exe, normally in `%LOCALAPPDATA%\Programs\ScribeForge`. It runs ScribeForge without its window, with the same engine and the same safety rules as the app.
+
+```bash
+"%LOCALAPPDATA%\Programs\ScribeForge\scribeforge.cmd" help
+```
+
+| Command | What it does |
+|---|---|
+| `scribeforge merge a.pdf b.pdf -o both.pdf` | Joins PDFs, in the order given |
+| `scribeforge split report.pdf --every 5` | Splits into files of 5 pages, or `--ranges "1-3, 4-9"`, or one file per page |
+| `scribeforge rotate report.pdf --pages "2, 4" --by 90` | Turns pages clockwise (90, 180, 270, or -90) |
+| `scribeforge extract report.pdf --pages "1-3"` | Saves just those pages |
+| `scribeforge info report.pdf --json` | Details and what the file carries (`--json` for scripts) |
+| `scribeforge details report.pdf --title "Q3"` | A copy with the title, author, subject or keywords changed |
+| `scribeforge redact report.pdf --find "John Smith"` | A redacted copy; also `--pages`, `--area` and `--dpi` |
+
+- Without `-o`, the new file goes next to the first PDF, named the way the app names it, and never replaces a file. With `-o`, an existing file is replaced only with `--overwrite`. The files being read are never written over.
+- Protected PDFs: a small window asks for the password, or add `--password-stdin` and send it as the first line of input. Passwords are never taken as part of the command.
+- Exit codes: 0 done, 1 the command couldn't be followed, 2 a problem with a file, 3 a check failed and nothing was saved.
+- The installer doesn't change your PATH. To type just `scribeforge` from any folder, add the install folder to your PATH yourself: Windows **Settings > System > About > Advanced system settings > Environment Variables**, then edit **Path** under your user's variables.
+- From the source code, run it as `npx electron . <command> ...` after `npm run build`.
+
+Full details are in the app's Help, under **Command line**.
 
 ## Setting up (Windows)
 
@@ -87,7 +114,7 @@ npm run trial:reset
 
 | Path | What it is |
 |---|---|
-| `src/main/` | The app process: window, menus, file dialogs, reading files, settings, the network guard |
+| `src/main/` | The app process: window, menus, file dialogs, reading files, settings, the network guard, and the command-line tool (`src/main/cli/`) |
 | `src/preload/` | The small bridge the screens are allowed to call |
 | `src/renderer/` | The screens (React), styles, the pdf.js viewer, annotating, redacting, help, and the Pages screen with its worker |
 | `src/engine/` | The PDF engine for the page tools, annotations, file details and redaction: plain TypeScript, run in a worker inside the window and in the unit tests |
@@ -95,7 +122,7 @@ npm run trial:reset
 | `tests/unit/` | Unit tests (Vitest) |
 | `tests/e2e/` | Whole-app tests (Playwright), for the built app and the installed app |
 | `content/help/` | The help pages |
-| `build/` | The app icon, used by the installer |
+| `build/` | The app icon, used by the installer, and `scribeforge.cmd`, the command-line launcher |
 | `scripts/` | Trial mode, test PDFs, icon and notices |
 | `%APPDATA%\ScribeForge\settings.json` | Your settings and recent files (trial mode: `%APPDATA%\ScribeForge Trial`) |
 
@@ -120,6 +147,8 @@ npm run trial:reset
     - Search and selected-text marks are built from where each letter really is, so no edges of letters show.
     - The redacted file keeps only the pages and the links between them: no details, comments, form fields, bookmarks, attached files or scripts.
     - A last check searches the redacted file for every search term whose matches were all marked. Tests check the same for text placed in the page, a comment, the title, a bookmark and an attachment.
+- **The installed program is locked down.** Electron's switches are set in ScribeForge.exe itself: it can't be used to run other scripts as Node.js, ignores `NODE_OPTIONS`, loads only its own packaged files, and refuses to start if those files have been changed. Tests read the switches back from the installed build.
+- **The command line keeps the same rules** as the app: no network, inputs never changed or written over, PDF scripts never run, passwords never stored, and redaction checked the same way.
 - **Files locked by their author** (no password needed to open, but limits on copying or changes) can be viewed and their pages saved. ScribeForge says first that the new file won't have those limits.
 
 ## Interim parts, to match BC6 later

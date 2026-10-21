@@ -8,6 +8,8 @@ import { applyChange } from '../shared/settings';
 import { presetFor } from '../shared/themes';
 import { clearRecent, forgetRecent, openManyWithDialog, openPath, openWithDialog, recentFiles } from './files';
 import { saveManyWithDialog, saveWithDialog } from './save';
+import { commandWords } from './cli/args';
+import { runCli } from './cli/main';
 import { buildMenu } from './menu';
 import { APP_ORIGIN, blockNetwork, registerAppScheme, serveApp } from './network';
 import { isTestWindow, placeAndShow } from './placement';
@@ -123,9 +125,14 @@ function registerHandlers(): void {
   });
 }
 
-// One ScribeForge window per data folder. Test runs each have their own folder.
-const onlyInstance = isTestWindow() || app.requestSingleInstanceLock();
-if (!onlyInstance) {
+// Started with a command (scribeforge merge ...): run it and exit, without the app's window.
+const words = commandWords(process.argv, process.defaultApp === true);
+
+// Otherwise one ScribeForge window per data folder. Test runs each have their own folder.
+const onlyInstance = words !== null || isTestWindow() || app.requestSingleInstanceLock();
+if (words !== null) {
+  runCli(words, rendererDir, devServer);
+} else if (!onlyInstance) {
   app.quit();
 } else {
   registerAppScheme();

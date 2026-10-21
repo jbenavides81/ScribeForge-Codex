@@ -11,7 +11,7 @@ import { newAnnotId, TEXT_BOX_POINTS, type Annot, type AnnotAction, type AnnotSt
 import { boxAt, selectionQuads, type Box } from '../annotate/geometry';
 import { Icon } from '../components/Icon';
 import type { Rect } from '../../../engine/types';
-import { findTerm, glyphsIn, lineBoxes, PADDING, pageGlyphs, type Glyph } from '../redact/glyphs';
+import { findTerm, glyphsIn, lineBoxes, PADDING, pageGlyphs, pageMayContain, type Glyph } from '../redact/glyphs';
 import { MarkPanel } from '../redact/MarkPanel';
 import { RedactionLayer, type DragBox } from '../redact/RedactionLayer';
 import { newMarkId, type RedactAction, type RedactMark, type RedactState } from '../redact/redactState';
@@ -287,15 +287,12 @@ export function DocumentView({
   /** Find and mark: every match of a term, on every page, becomes a mark. */
   const findAndMark = async (term: string) => {
     setFinding(true);
-    const needle = term.normalize('NFKC').toLowerCase().replace(/\s+/g, '');
     const found: { page: number; text: string; boxes: Rect[] }[] = [];
     try {
       for (let index = 0; index < pdf.numPages; index++) {
         if (index % 25 === 0) setFindResult(`Searching page ${index + 1} of ${pdf.numPages}…`);
         // Quick check of the page's text first; letter positions only for pages with a match.
-        const content = await (await pdf.getPage(index + 1)).getTextContent();
-        const text = content.items.map((i) => ('str' in i ? i.str : '')).join('').normalize('NFKC').toLowerCase().replace(/\s+/g, '');
-        if (!text.includes(needle)) continue;
+        if (!(await pageMayContain(await pdf.getPage(index + 1), term))) continue;
         for (const match of findTerm(await glyphsOf(index), term)) found.push({ page: index, ...match });
       }
       const group = newMarkId();

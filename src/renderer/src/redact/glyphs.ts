@@ -291,6 +291,14 @@ export function findTerm(glyphs: Glyph[], term: string): { text: string; boxes: 
   return found;
 }
 
+const squash = (s: string) => normalise(s).replace(/\s+/g, '');
+
+/** A quick check of a page's text, so letter positions are only worked out for pages with a match. */
+export async function pageMayContain(page: { getTextContent(): Promise<{ items: object[] }> }, term: string): Promise<boolean> {
+  const content = await page.getTextContent();
+  return squash(content.items.map((i) => ('str' in i ? String(i.str) : '')).join('')).includes(squash(term));
+}
+
 /** The letters whose middle lies inside any of the boxes (a text selection, in page space). */
 export function glyphsIn(glyphs: Glyph[], boxes: Rect[]): Glyph[] {
   return glyphs.filter(({ rect }) => {

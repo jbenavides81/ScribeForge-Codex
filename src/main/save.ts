@@ -1,34 +1,11 @@
 import { dialog, type BrowserWindow } from 'electron';
-import { existsSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type { SaveManyRequest, SaveManyResult, SaveRequest, SaveResult } from '../shared/api';
 import { safeFileName } from '../engine/names';
+import { samePath, uniquePath, writeSafely } from './fileWrite';
 
 // Saving. ScribeForge writes only where the person chose in a dialog, never over an existing file
 // without asking, and replacing an original asks a second, plain question first.
-
-const samePath = (a: string, b: string) => path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase();
-
-/** `dir\name.pdf`, or `dir\name 2.pdf`, `dir\name 3.pdf`… if that file already exists. */
-export function uniquePath(dir: string, fileName: string): string {
-  const ext = path.extname(fileName);
-  const base = fileName.slice(0, fileName.length - ext.length);
-  let candidate = path.join(dir, fileName);
-  for (let n = 2; existsSync(candidate); n++) candidate = path.join(dir, `${base} ${n}${ext}`);
-  return candidate;
-}
-
-/** Writes to a temporary file first, then puts it in place, so a failed save never leaves half a file. */
-export function writeSafely(target: string, bytes: Uint8Array): void {
-  const temp = `${target}.scribeforge-saving`;
-  try {
-    writeFileSync(temp, bytes);
-    renameSync(temp, target);
-  } catch (error) {
-    rmSync(temp, { force: true });
-    throw error;
-  }
-}
 
 function pdfName(name: string): string {
   return `${safeFileName(name.replace(/\.pdf$/i, ''))}.pdf`;

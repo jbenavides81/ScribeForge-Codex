@@ -41,7 +41,8 @@ export default defineConfig({
       outDir: path('out/preload'),
       // Sandboxed preload scripts must be a single CommonJS file.
       rollupOptions: {
-        input: { index: path('src/preload/index.ts') },
+        // cli: the command-line tool's window (see src/main/cli/main.ts).
+        input: { index: path('src/preload/index.ts'), cli: path('src/preload/cli.ts') },
         output: { format: 'cjs', entryFileNames: '[name].cjs' },
       },
     },
@@ -56,7 +57,7 @@ export default defineConfig({
     worker: { format: 'es' },
     build: {
       outDir: path('out/renderer'),
-      rollupOptions: { input: { index: path('src/renderer/index.html') } },
+      rollupOptions: { input: { index: path('src/renderer/index.html'), cli: path('src/renderer/cli.html') } },
     },
   },
 });
