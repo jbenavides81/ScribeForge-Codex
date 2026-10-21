@@ -4,11 +4,12 @@ An open-source, offline PDF toolkit for Windows: view, organise, annotate, inspe
 
 ScribeForge never sends anything over the network, and it never changes the files you open: edits save to new files.
 
-**Status:** stops 1a to 1d are built. Version 0.4.0. You can:
+**Status:** stops 1a to 1e are built. Version 0.5.0. You can:
 - open, view, search and copy from PDFs;
 - on the Pages screen, merge, split, reorder, rotate, delete, extract and insert blank pages;
 - on the Document screen, highlight, underline and strike out text, and add notes and text boxes;
-- on the Details screen, see and change a file's title, author, subject and keywords, and see everything else it carries: attached files, form fields, comments, scripts, bookmarks, hidden layers and links.
+- on the Details screen, see and change a file's title, author, subject and keywords, and see everything else it carries: attached files, form fields, comments, scripts, bookmarks, hidden layers and links;
+- on the Document screen in Redact mode, mark areas, selected text, or every match of a search, check the marks, and save a redacted copy.
 
 Everything saves to a new file. Before saving, ScribeForge shows what the new file will carry (you can turn this off in Settings).
 
@@ -98,6 +99,11 @@ npm run trial:reset
 - **No hidden surprises.** Before every save, a list shows what the new file carries besides its pages. Scripts and files attached to the whole document are never copied into new files.
 - **A file's details are kept in two places** (the classic details and a copy in XMP format). New files always get both, matching, so old values can't linger in either.
 - **Hidden layers stay hidden** in new files, and the list says they're there, because what's on them is still in the file.
+- **Redaction removes, it doesn't cover.**
+    - Every page with a mark becomes a picture of the page with the marks blacked out, so none of its text is left. Pages without marks are copied as they are.
+    - Search and selected-text marks are built from where each letter really is, so no edges of letters show.
+    - The redacted file keeps only the pages and the links between them: no details, comments, form fields, bookmarks, attached files or scripts.
+    - A last check searches the redacted file for every search term whose matches were all marked. Tests check the same for text placed in the page, a comment, the title, a bookmark and an attachment.
 - **Files locked by their author** (no password needed to open, but limits on copying or changes) can be viewed and their pages saved. ScribeForge says first that the new file won't have those limits.
 
 ## Interim parts, to match BC6 later

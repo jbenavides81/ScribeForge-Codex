@@ -44,7 +44,7 @@ export function buildDocument(
   items: PageItem[],
   annotations: AnnotationInput[] = [],
   options: BuildOptions = {},
-): Promise<{ bytes: Uint8Array; report: BuildReport }> {
+): Promise<{ bytes: Uint8Array; report: BuildReport; found: string[] }> {
   return run({ kind: 'build', sources: sources.map(copied), items, annotations, options });
 }
 

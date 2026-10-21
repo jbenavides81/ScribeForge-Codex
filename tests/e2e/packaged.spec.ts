@@ -125,6 +125,31 @@ test("the installed app's Details screen reads a file, and edited details are sa
   expect(fixtureHashes()).toEqual(before);
 });
 
+test("the installed app redacts: the term is found nowhere in the redacted file", async ({}, info) => {
+  test.skip(!existsSync(PACKAGED_EXE), 'Run "npm run pack" first.');
+  const before = fixtureHashes();
+  const run = await launch(info.project.name);
+  const { app, win } = run;
+  await openFixture(run, 'redaction.pdf');
+  await waitForFirstPage(win);
+  await win.getByRole('radiogroup', { name: 'Tools' }).getByRole('radio', { name: 'Redact' }).click();
+  const bar = win.getByRole('toolbar', { name: 'Redact' });
+  await bar.getByLabel('Text to find and mark').fill('REDACT-ME-TERM');
+  await bar.getByRole('button', { name: 'Mark all' }).click();
+  await expect(win.getByTestId('redact-hint')).toHaveText('Marked 4 matches on 2 pages.');
+  const out = mkdtempSync(path.join(tmpdir(), 'scribeforge-e2e-out-'));
+  await answerDialogs(app, { saveAs: path.join(out, 'redacted.pdf') });
+  await bar.getByRole('button', { name: 'Review and redact…' }).click();
+  await win.getByTestId('marks-dialog').getByRole('button', { name: 'Redact…' }).click();
+  await win.getByTestId('review-dialog').getByRole('button', { name: 'Choose where to save…' }).click({ timeout: 30_000 });
+  await expect(win.getByTestId('message')).toContainText('(3 pages, 2 pages redacted)');
+  const bytes = new Uint8Array(readFileSync(path.join(out, 'redacted.pdf')));
+  expect(await findEverywhere(bytes, 'REDACT-ME-TERM')).toEqual([]);
+  expect(await blockedRequests(app)).toEqual([]);
+  await closeApp(app);
+  expect(fixtureHashes()).toEqual(before);
+});
+
 test("the installed app's annotations are saved for other readers", async ({}, info) => {
   test.skip(!existsSync(PACKAGED_EXE), 'Run "npm run pack" first.');
   const before = fixtureHashes();

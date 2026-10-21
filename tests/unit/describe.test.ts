@@ -1,6 +1,6 @@
 // The plain words the Details screen and the before-save list use.
 import { describe, expect, it } from 'vitest';
-import type { Carries } from '../../src/engine/types';
+import { emptyReport, type Carries } from '../../src/engine/types';
 import { actionText, combineCarries, commentKinds, pageSize, restrictions, sizeText } from '../../src/renderer/src/details/describe';
 import { buildNotes } from '../../src/renderer/src/pages/report';
 
@@ -83,7 +83,7 @@ describe('several new files', () => {
 
 describe('what saving left out', () => {
   it('explains each thing in a sentence', () => {
-    const report = { pages: 2, linksKept: 0, linksRemoved: 1, bookmarksKept: 0, bookmarksRemoved: 0, formFieldsDetached: 1, actionsRemoved: 2, strayReferencesCut: 0, objectsSwept: 0, annotationsAdded: 0, annotationsLeftOut: 0, attachmentsLeftOut: 2 };
+    const report = { ...emptyReport(), pages: 2, linksRemoved: 1, formFieldsDetached: 1, actionsRemoved: 2, attachmentsLeftOut: 2 };
     expect(buildNotes(report)).toEqual([
       "1 link and 0 bookmarks pointed to pages that aren't in the new file, so they were left out.",
       "Form fields look the same but can't be filled in, in the new file.",

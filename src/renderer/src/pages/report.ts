@@ -32,3 +32,28 @@ export function savedMessage(path: string, report: BuildReport): string {
   if (report.annotationsAdded > 0) lines.push(`${plural(report.annotationsAdded, 'annotation')} saved with the pages.`);
   return [...lines, ...buildNotes(report)].join('\n');
 }
+
+/** What redacting did and what the redacted file leaves out, for the summary before saving. */
+export function redactionNotes(report: BuildReport, marks: number, marksLeftOut: number, dpi: number): string[] {
+  const lines = [
+    `${plural(marks, 'mark')} on ${plural(report.pagesRedacted, 'page')} ${report.pagesRedacted === 1 ? 'is' : 'are'} blacked out. ${
+      report.pagesRedacted === 1 ? 'That page is now a picture' : 'Those pages are now pictures'
+    } (${dpi} dpi): ${report.pagesRedacted === 1 ? 'its' : 'their'} text can't be selected, searched or copied.`,
+  ];
+  if (marksLeftOut > 0) lines.push(`${plural(marksLeftOut, 'mark')} ${marksLeftOut === 1 ? 'was' : 'were'} on pages that aren't in the new file.`);
+  const left: string[] = [];
+  if (report.commentsLeftOut > 0) left.push(plural(report.commentsLeftOut, 'comment'));
+  if (report.formFieldsLeftOut > 0) left.push(plural(report.formFieldsLeftOut, 'form field'));
+  if (report.bookmarksLeftOut > 0) left.push(plural(report.bookmarksLeftOut, 'bookmark'));
+  if (report.attachmentsLeftOut > 0) left.push(plural(report.attachmentsLeftOut, 'attached file'));
+  if (report.actionsRemoved > 0) left.push(plural(report.actionsRemoved, 'script or action', 'scripts or actions'));
+  lines.push(
+    `Left out, as in every redacted file: the document's details (title, author and so on)${left.length > 0 ? `, ${left.join(', ')}` : ''}, and any annotations you added.`,
+  );
+  return lines;
+}
+
+/** What to tell the person after saving a redacted file. */
+export function redactedMessage(path: string, report: BuildReport): string {
+  return `Saved ${fileNameOf(path)} (${plural(report.pages, 'page')}, ${plural(report.pagesRedacted, 'page')} redacted).`;
+}

@@ -344,6 +344,99 @@ async function ownerLocked() {
   return doc.save();
 }
 
+// For redaction boxes (stop 1e): one word in each way a PDF can place text, each alone on its
+// line so a test can check that no part of a letter shows outside its box.
+async function textStyles() {
+  const doc = await PDFDocument.create();
+  const helvetica = await doc.embedFont(StandardFonts.Helvetica);
+  const courier = await doc.embedFont(StandardFonts.Courier);
+  const times = await doc.embedFont(StandardFonts.TimesRoman);
+  const page = doc.addPage([612, 792]);
+  const form = doc.context.register(
+    doc.context.flateStream('BT /F1 12 Tf 0 0 Td (MIKE) Tj ET', {
+      Type: 'XObject',
+      Subtype: 'Form',
+      BBox: [0, -10, 100, 30],
+      Matrix: [1, 0, 0, 1, 300, 0],
+      Resources: { Font: { F1: helvetica.ref } },
+    }),
+  );
+  page.node.set(PDFName.of('Resources'), doc.context.obj({ Font: { F1: helvetica.ref, F2: courier.ref, F3: times.ref }, XObject: { Fm1: form } }));
+  const content = [
+    'BT /F1 14 Tf 72 720 Td (ALPHA) Tj ET', // plain
+    'q BT /F1 14 Tf 2 Tc 72 680 Td (BRAVO) Tj ET Q', // character spacing
+    'q BT /F1 14 Tf 70 Tz 72 640 Td (CHARLIE) Tj ET Q', // squeezed to 70% width
+    'q BT /F1 14 Tf 4 Ts 72 600 Td (DELTA) Tj ET Q', // raised
+    'BT /F1 14 Tf 72 560 Td [(EC) -120 (HO)] TJ ET', // kerned
+    'q 1.5 0 0 1.5 72 500 cm BT /F1 10 Tf 0 0 Td (FOXTROT) Tj ET Q', // scaled page space
+    'BT /F1 14 Tf 0 1 -1 0 520 300 Tm (GOLF) Tj ET', // turned to run upwards
+    'q BT /F1 14 Tf 12 Tw 72 440 Td (HOTEL INDIA) Tj ET Q', // wide word spacing
+    'BT /F2 14 Tf 72 400 Td (JULIET) Tj ET', // fixed-width font
+    "BT /F1 14 Tf 20 TL 72 380 Td (KILO) ' ET", // next line, then show
+    'q BT /F1 14 Tf 20 TL 72 340 Td 3 1 (LIMA) " ET Q', // set spacing, next line, show
+    'q 1 0 0 1 0 220 cm /Fm1 Do Q', // inside a form with its own position
+    'BT /F3 16 Tf 300 720 Td (NOVEMBER) Tj ET', // another font
+  ].join('\n');
+  page.node.set(PDFName.of('Contents'), doc.context.register(doc.context.flateStream(content)));
+  return doc.save();
+}
+
+// For redaction (stop 1e): a test term placed in page text (plain, kerned, invisible and on a
+// hidden layer), a comment, the title, the XMP copy, a bookmark, an attachment's name and its
+// contents, a script, and in hidden data on a page that isn't marked.
+export const REDACT_TERM = 'REDACT-ME-TERM';
+async function redaction() {
+  const doc = await PDFDocument.create({ updateMetadata: false });
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  doc.setTitle(`Report on ${REDACT_TERM}`);
+  doc.setAuthor('Fixture Author');
+  setXmp(doc, xmpPacket({ title: `Report on ${REDACT_TERM}`, author: 'Fixture Author', subject: '', keywords: '', producer: 'Fixture Maker 2.0', creatorTool: 'Fixture Writer 1.0' }));
+  const [p1, p2, p3] = [1, 2, 3].map(() => doc.addPage([612, 792]));
+
+  // Page 1 is never marked: its text must come through unchanged.
+  lines(p1, font, ['UNMARKED-PAGE-ONE', 'Nothing secret is written on this page.', 'Go to page 3']);
+  const comment = doc.context.register(
+    doc.context.obj({ Type: 'Annot', Subtype: 'Text', Rect: [500, 700, 520, 720], Contents: PDFString.of(`A comment about ${REDACT_TERM}`), T: PDFString.of('Fixture Author') }),
+  );
+  p1.node.set(PDFName.of('Annots'), doc.context.obj([comment, linkTo(doc, p1, [54, 700, 200, 716], p3)]));
+  p1.node.set(PDFName.of('PieceInfo'), doc.context.obj({ FixtureApp: { Private: PDFString.of(REDACT_TERM) } }));
+  const pageXmp = doc.context.stream(new TextEncoder().encode(`<x:xmpmeta xmlns:x="adobe:ns:meta/"><!-- ${REDACT_TERM} --></x:xmpmeta>`), { Type: 'Metadata', Subtype: 'XML' });
+  p1.node.set(PDFName.of('Metadata'), doc.context.register(pageXmp));
+
+  // Page 2: the term in a sentence.
+  lines(p2, font, ['MARKED-PAGE-TWO', `The secret is ${REDACT_TERM} in this sentence.`, 'The rest of this line stays.']);
+
+  // Page 3: the term kerned, invisible (like scanned text), and on a hidden layer.
+  lines(p3, font, ['MARKED-PAGE-THREE']);
+  const hidden = doc.context.register(doc.context.obj({ Type: 'OCG', Name: PDFString.of('Draft notes') }));
+  doc.catalog.set(PDFName.of('OCProperties'), doc.context.obj({ OCGs: [hidden], D: { OFF: [hidden] } }));
+  const resources = p3.node.Resources();
+  resources.set(PDFName.of('Properties'), doc.context.obj({ L1: hidden }));
+  resources.lookup(PDFName.of('Font'), PDFDict).set(PDFName.of('FR'), font.ref);
+  const extra = [
+    'BT /FR 12 Tf 54 700 Td [(REDACT-) -10 (ME-TERM)] TJ ET',
+    'BT 3 Tr /FR 12 Tf 54 660 Td (REDACT-ME-TERM) Tj ET',
+    '/OC /L1 BDC BT /FR 12 Tf 54 620 Td (REDACT-ME-TERM) Tj ET EMC',
+  ].join('\n');
+  p3.node.addContentStream(doc.context.register(doc.context.flateStream(extra)));
+
+  // A bookmark, an attachment, and a script, all naming the term.
+  const outlines = doc.context.nextRef();
+  const item = doc.context.nextRef();
+  doc.context.assign(item, doc.context.obj({ Title: PDFString.of(`Chapter about ${REDACT_TERM}`), Parent: outlines, Dest: [p2.ref, PDFName.of('Fit')] }));
+  doc.context.assign(outlines, doc.context.obj({ Type: 'Outlines', First: item, Last: item, Count: 1 }));
+  doc.catalog.set(PDFName.of('Outlines'), outlines);
+  const script = doc.context.register(doc.context.obj({ S: 'JavaScript', JS: PDFString.of(`app.alert('${REDACT_TERM}');`) }));
+  doc.catalog.set(
+    PDFName.of('Names'),
+    doc.context.obj({
+      EmbeddedFiles: { Names: [PDFString.of(`${REDACT_TERM}.txt`), embeddedFile(doc, `${REDACT_TERM}.txt`, `Attached ${REDACT_TERM}`)] },
+      JavaScript: { Names: [PDFString.of('init'), script] },
+    }),
+  );
+  return doc.save();
+}
+
 const normalBytes = await normal();
 const files = {
   'normal.pdf': normalBytes,
@@ -356,6 +449,8 @@ const files = {
   'stale-xmp.pdf': await staleXmp(),
   'broken-xmp.pdf': await brokenXmp(),
   'owner-locked.pdf': await ownerLocked(),
+  'text-styles.pdf': await textStyles(),
+  'redaction.pdf': await redaction(),
   // Cut off halfway through.
   'damaged-truncated.pdf': normalBytes.slice(0, Math.floor(normalBytes.length / 2)),
   // The cross-reference table's position points nowhere.

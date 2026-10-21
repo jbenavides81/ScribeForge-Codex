@@ -1,7 +1,6 @@
-import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { PDFArray, PDFDict, PDFDocument, PDFName, PDFString } from '@cantoo/pdf-lib';
 import { MAX_IMAGE_PIXELS, safeDocumentOptions } from '../../src/shared/pdfOptions';
@@ -22,10 +21,6 @@ async function text(doc: pdfjs.PDFDocumentProxy): Promise<string> {
   }
   return parts.join('\n');
 }
-
-beforeAll(() => {
-  execFileSync(process.execPath, ['scripts/make-fixtures.mjs'], { cwd: ROOT, stdio: 'ignore' });
-}, 120_000);
 
 describe('safe pdf.js settings', () => {
   it('turns off XFA and pdf.js fetching, and loads support files from the app', () => {

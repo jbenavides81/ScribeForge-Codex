@@ -1,12 +1,11 @@
 // Stop 1b's required checks for the page engine: right pages, order and rotation; removed pages
 // found nowhere; every link and bookmark pointing inside the new file; scripts gone; sources
 // unchanged; and speed on large files.
-import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { buildPdf } from '../../src/engine/build';
 import type { PageItem, Rotation, SourceInput } from '../../src/engine/types';
-import { bookmarks, findEverywhere, fixture, links, pageIds, pageTexts, ROOT, rotations, sizes, strayPages } from './support/inspect';
+import { bookmarks, findEverywhere, fixture, links, pageIds, pageTexts, rotations, sizes, strayPages } from './support/inspect';
 
 let linksPdf: SourceInput;
 let secondPdf: SourceInput;
@@ -15,7 +14,6 @@ const pages = (source: string, list: number[], rotate: Rotation = 0): PageItem[]
   list.map((n) => ({ kind: 'page', source, index: n - 1, rotate }));
 
 beforeAll(() => {
-  execFileSync(process.execPath, ['scripts/make-fixtures.mjs'], { cwd: ROOT, stdio: 'ignore' });
   linksPdf = { id: 'a', name: 'links.pdf', bytes: fixture('links.pdf') };
   secondPdf = { id: 'b', name: 'second.pdf', bytes: fixture('second.pdf') };
 }, 120_000);

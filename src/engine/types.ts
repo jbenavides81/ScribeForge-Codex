@@ -84,6 +84,12 @@ export interface BuildReport {
   annotationsLeftOut: number;
   /** Files attached to a whole document (not to a page), which aren't copied into new files. */
   attachmentsLeftOut: number;
+  /** Redaction: pages made into images. */
+  pagesRedacted: number;
+  /** Redaction: comments, form fields and bookmarks not carried over. */
+  commentsLeftOut: number;
+  formFieldsLeftOut: number;
+  bookmarksLeftOut: number;
 }
 
 export function emptyReport(): BuildReport {
@@ -100,6 +106,10 @@ export function emptyReport(): BuildReport {
     annotationsAdded: 0,
     annotationsLeftOut: 0,
     attachmentsLeftOut: 0,
+    pagesRedacted: 0,
+    commentsLeftOut: 0,
+    formFieldsLeftOut: 0,
+    bookmarksLeftOut: 0,
   };
 }
 
@@ -121,6 +131,14 @@ export interface BuildOptions {
   producer?: string;
   /** The time written as the new file's last change (for tests). */
   now?: Date;
+  /**
+   * Redaction: pages to replace with images, by "source:index". The new file then keeps only
+   * the pages and the links between them: no comments, form fields, bookmarks, attachments,
+   * details or scripts (Phase 0 plan, question 5).
+   */
+  redact?: Record<string, RedactedPage>;
+  /** Terms that must be found nowhere in the new file; any that are come back in `found`. */
+  verifyTerms?: string[];
 }
 
 /** One of a file's own details, as stored in the classic details and in XMP. */
@@ -187,4 +205,17 @@ export interface Carries {
 export interface FileReport {
   details: FileDetails;
   carries: Carries;
+}
+
+/** A rectangle in a PDF page's own space: left, bottom, right, top. */
+export type Rect = [number, number, number, number];
+
+/** A page made into an image for redaction, with its marks already blacked out. */
+export interface RedactedPage {
+  /** The page as a PNG, drawn upright as the page is in its file (before any turning). */
+  png: Uint8Array;
+  /** The area of the page the image covers (pdf.js's view: the crop box), in page space. */
+  view: Rect;
+  /** Dots per inch it was drawn at. */
+  dpi: number;
 }

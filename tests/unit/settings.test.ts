@@ -9,16 +9,16 @@ const tempDir = () => mkdtempSync(path.join(tmpdir(), 'sf-settings-'));
 
 describe('validateSettings', () => {
   it('accepts valid settings unchanged', () => {
-    const input = { version: 1, theme: 'light', textSize: 'larger', rememberRecent: true, recentFiles: ['C:\\a.pdf'], authorName: 'Pat', reviewBeforeSave: false };
+    const input = { version: 1, theme: 'light', textSize: 'larger', rememberRecent: true, recentFiles: ['C:\\a.pdf'], authorName: 'Pat', reviewBeforeSave: false, redactionDpi: 300 };
     const { settings, problems } = validateSettings(input);
     expect(problems).toEqual([]);
     expect(settings).toEqual(input);
   });
 
   it('falls back to defaults for invalid values and lists each one', () => {
-    const { settings, problems } = validateSettings({ theme: 'neon', textSize: 99, rememberRecent: 'yes', recentFiles: 'C:\\a.pdf', authorName: 7, reviewBeforeSave: 'no' });
+    const { settings, problems } = validateSettings({ theme: 'neon', textSize: 99, rememberRecent: 'yes', recentFiles: 'C:\\a.pdf', authorName: 7, reviewBeforeSave: 'no', redactionDpi: 72 });
     expect(settings).toEqual({ ...DEFAULT_SETTINGS, recentFiles: [] });
-    expect(problems.sort()).toEqual(['authorName', 'recentFiles', 'rememberRecent', 'reviewBeforeSave', 'textSize', 'theme']);
+    expect(problems.sort()).toEqual(['authorName', 'recentFiles', 'redactionDpi', 'rememberRecent', 'reviewBeforeSave', 'textSize', 'theme']);
   });
 
   it('handles something that is not a settings object at all', () => {

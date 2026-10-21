@@ -4,5 +4,6 @@ export default defineConfig({
   test: {
     include: ['tests/unit/**/*.test.ts'],
     environment: 'node',
+    globalSetup: ['tests/unit/setup-fixtures.ts'],
   },
 });

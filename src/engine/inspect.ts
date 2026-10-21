@@ -218,7 +218,7 @@ function hasValue(v: PDFObject | undefined): boolean {
   return text === undefined ? true : text !== '';
 }
 
-function countOutline(nodes: OutlineNode[]): number {
+export function countOutline(nodes: OutlineNode[]): number {
   return nodes.reduce((n, node) => n + 1 + countOutline(node.children), 0);
 }
 

@@ -10,6 +10,13 @@ import { AnnotationPanel } from '../annotate/AnnotationPanel';
 import { newAnnotId, TEXT_BOX_POINTS, type Annot, type AnnotAction, type AnnotState } from '../annotate/annotState';
 import { boxAt, selectionQuads, type Box } from '../annotate/geometry';
 import { Icon } from '../components/Icon';
+import type { Rect } from '../../../engine/types';
+import { findTerm, glyphsIn, lineBoxes, PADDING, pageGlyphs, type Glyph } from '../redact/glyphs';
+import { MarkPanel } from '../redact/MarkPanel';
+import { RedactionLayer, type DragBox } from '../redact/RedactionLayer';
+import { newMarkId, type RedactAction, type RedactMark, type RedactState } from '../redact/redactState';
+import { ModeSwitch, RedactToolbar, type RedactTool } from '../redact/RedactToolbar';
+import { plural } from '../words';
 import { PDFJS_ASSETS, pdfjsLib, type PdfDocument } from './pdfjs';
 import { Thumbnails } from './Thumbnails';
 
@@ -38,6 +45,9 @@ export function DocumentView({
   command,
   annots,
   annotDispatch,
+  redact,
+  redactDispatch,
+  onRedact,
   active,
   working,
   onSave,
@@ -54,6 +64,11 @@ export function DocumentView({
   /** Annotations added in ScribeForge, not saved yet. */
   annots: AnnotState;
   annotDispatch: Dispatch<AnnotAction>;
+  /** Redaction marks, not applied yet. */
+  redact: RedactState;
+  redactDispatch: Dispatch<RedactAction>;
+  /** Review the marks, then make the redacted file. */
+  onRedact: () => void;
   /** True while this screen is the one showing (keyboard shortcuts only work then). */
   active: boolean;
   working: string | null;
@@ -76,7 +91,14 @@ export function DocumentView({
   const [colourId, setColourId] = useState(DEFAULT_ANNOTATION_COLOUR);
   const [layout, setLayout] = useState(0);
   const [justPlaced, setJustPlaced] = useState<string | null>(null);
+  const [mode, setMode] = useState<'annotate' | 'redact'>('annotate');
+  const [redactTool, setRedactTool] = useState<RedactTool>('select');
+  const [drag, setDrag] = useState<DragBox | null>(null);
+  const [finding, setFinding] = useState(false);
+  const [findResult, setFindResult] = useState<string | null>(null);
+  const glyphCache = useRef(new Map<number, Promise<Glyph[]>>());
   const relayout = useCallback(() => setLayout((n) => n + 1), []);
+  const redacting = mode === 'redact';
   // Typing goes straight into a note or text box just placed, but not when it's selected again later.
   useEffect(() => {
     if (annots.selected !== justPlaced) setJustPlaced(null);
@@ -214,15 +236,24 @@ export function DocumentView({
     return id;
   };
 
-  /** Highlight, underline or strikeout: made from the text selected on the page. */
-  const markSelection = () => {
-    if (tool !== 'highlight' && tool !== 'underline' && tool !== 'strikeout') return;
+  /** Where every letter on a page is (worked out once per page, when first needed). */
+  const glyphsOf = (index: number): Promise<Glyph[]> => {
+    let glyphs = glyphCache.current.get(index);
+    if (!glyphs) {
+      glyphs = pdf.getPage(index + 1).then((p) => pageGlyphs(p, { OPS: pdfjsLib.OPS, annotationsOff: pdfjsLib.AnnotationMode.DISABLE }));
+      glyphCache.current.set(index, glyphs);
+    }
+    return glyphs;
+  };
+
+  /** The current text selection, as boxes on each page it touches (pixels on the page). */
+  const selectionByPage = () => {
     const selection = window.getSelection();
-    if (!selection || selection.isCollapsed) return;
+    const byPage = new Map<number, { boxes: Box[]; page: NonNullable<ReturnType<typeof pageAt>> }>();
+    if (!selection || selection.isCollapsed) return byPage;
     // Each piece of the selection belongs to the page it sits on, found by position rather than
     // by what's under it on screen, so text scrolled out of view (or off a wide page) still counts.
     const pages = [...(containerRef.current?.querySelectorAll<HTMLElement>('.page') ?? [])].map((div) => ({ div, box: div.getBoundingClientRect() }));
-    const byPage = new Map<number, { boxes: Box[]; page: NonNullable<ReturnType<typeof pageAt>> }>();
     for (let i = 0; i < selection.rangeCount; i++) {
       for (const r of selection.getRangeAt(i).getClientRects()) {
         const x = r.left + r.width / 2;
@@ -236,6 +267,93 @@ export function DocumentView({
         byPage.set(page.index, entry);
       }
     }
+    return byPage;
+  };
+
+  /** Mark text: covers exactly the letters selected (found by position, not by eye). */
+  const redactSelection = async () => {
+    const byPage = selectionByPage();
+    window.getSelection()?.removeAllRanges();
+    const marks: RedactMark[] = [];
+    for (const [index, { boxes, page }] of byPage) {
+      const lines: Rect[] = selectionQuads(boxes, page.view.viewport).map((q) => [q[4], q[5], q[2], q[3]]);
+      const letters = glyphsIn(await glyphsOf(index), lines);
+      const rects = letters.length > 0 ? lineBoxes(letters) : lines.map(([a, b, c, d]): Rect => [a - PADDING, b - PADDING, c + PADDING, d + PADDING]);
+      if (rects.length > 0) marks.push({ id: newMarkId(), page: index, kind: 'text', rects, text: letters.map((g) => g.text).join('') });
+    }
+    redactDispatch({ type: 'add', marks });
+  };
+
+  /** Find and mark: every match of a term, on every page, becomes a mark. */
+  const findAndMark = async (term: string) => {
+    setFinding(true);
+    const needle = term.normalize('NFKC').toLowerCase().replace(/\s+/g, '');
+    const found: { page: number; text: string; boxes: Rect[] }[] = [];
+    try {
+      for (let index = 0; index < pdf.numPages; index++) {
+        if (index % 25 === 0) setFindResult(`Searching page ${index + 1} of ${pdf.numPages}…`);
+        // Quick check of the page's text first; letter positions only for pages with a match.
+        const content = await (await pdf.getPage(index + 1)).getTextContent();
+        const text = content.items.map((i) => ('str' in i ? i.str : '')).join('').normalize('NFKC').toLowerCase().replace(/\s+/g, '');
+        if (!text.includes(needle)) continue;
+        for (const match of findTerm(await glyphsOf(index), term)) found.push({ page: index, ...match });
+      }
+      const group = newMarkId();
+      redactDispatch({
+        type: 'add',
+        marks: found.map((f) => ({ id: newMarkId(), page: f.page, kind: 'search', rects: f.boxes, text: f.text, term, group, groupSize: found.length })),
+      });
+      const pages = new Set(found.map((f) => f.page)).size;
+      setFindResult(found.length > 0 ? `Marked ${plural(found.length, 'match', 'matches')} on ${plural(pages, 'page')}.` : `“${term}” wasn't found.`);
+    } finally {
+      setFinding(false);
+    }
+  };
+
+  /** Mark area: drag a box across part of a page. */
+  const startArea = (e: React.MouseEvent) => {
+    if (!redacting || redactTool !== 'area' || e.button !== 0) return;
+    const page = pageAt(e.target as Element);
+    if (!page) return;
+    e.preventDefault();
+    const origin = page.div.getBoundingClientRect();
+    const sx = e.clientX - origin.left;
+    const sy = e.clientY - origin.top;
+    const clamp = (v: number, max: number) => Math.min(Math.max(v, 0), max);
+    const boxFor = (ev: MouseEvent): DragBox => {
+      const now = page.div.getBoundingClientRect();
+      const x = clamp(ev.clientX - now.left, now.width);
+      const y = clamp(ev.clientY - now.top, now.height);
+      return { page: page.index, left: Math.min(sx, x), top: Math.min(sy, y), right: Math.max(sx, x), bottom: Math.max(sy, y) };
+    };
+    const move = (ev: MouseEvent) => setDrag(boxFor(ev));
+    const up = (ev: MouseEvent) => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+      setDrag(null);
+      const box = boxFor(ev);
+      if (box.right - box.left < 4 || box.bottom - box.top < 4) return;
+      const vp = page.view.viewport;
+      const a = vp.convertToPdfPoint(box.left, box.top);
+      const b = vp.convertToPdfPoint(box.right, box.bottom);
+      const rect: Rect = [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[0], b[0]), Math.max(a[1], b[1])];
+      redactDispatch({ type: 'add', marks: [{ id: newMarkId(), page: page.index, kind: 'area', rects: [rect] }] });
+    };
+    setDrag(boxFor(e.nativeEvent));
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  };
+
+  /** Highlight, underline or strikeout: made from the text selected on the page. */
+  const markSelection = () => {
+    if (redacting) {
+      if (redactTool === 'text') void redactSelection();
+      return;
+    }
+    if (tool !== 'highlight' && tool !== 'underline' && tool !== 'strikeout') return;
+    const byPage = selectionByPage();
+    const selection = window.getSelection();
+    if (!selection || selection.isCollapsed) return;
     for (const [index, { boxes, page }] of byPage) {
       const quads = selectionQuads(boxes, page.view.viewport);
       if (quads.length > 0) add({ page: index, kind: tool, quads, text: '', rotation: page.view.pdfPage?.rotate ?? 0 });
@@ -245,7 +363,7 @@ export function DocumentView({
 
   /** Note or text box: placed where the page is clicked. */
   const placeAt = (e: React.MouseEvent): boolean => {
-    if (tool !== 'note' && tool !== 'text') return false;
+    if (redacting || (tool !== 'note' && tool !== 'text')) return false;
     const page = pageAt(e.target as Element);
     if (!page) return false;
     const origin = page.div.getBoundingClientRect();
@@ -268,6 +386,17 @@ export function DocumentView({
       const target = e.target as HTMLElement;
       if (target.closest('input, textarea, select') || document.querySelector('.sf-dialog')) return;
       const ctrl = e.ctrlKey || e.metaKey;
+      if (redacting) {
+        if (ctrl && e.key.toLowerCase() === 'z') redactDispatch({ type: 'undo' });
+        else if (ctrl && e.key.toLowerCase() === 'y') redactDispatch({ type: 'redo' });
+        else if (e.key === 'Delete' && redact.selected) redactDispatch({ type: 'remove', ids: [redact.selected] });
+        else if (e.key === 'Escape' && (redact.selected || redactTool !== 'select')) {
+          redactDispatch({ type: 'select', id: null });
+          setRedactTool('select');
+        } else return;
+        e.preventDefault();
+        return;
+      }
       if (ctrl && e.key.toLowerCase() === 'z') annotDispatch({ type: 'undo' });
       else if (ctrl && e.key.toLowerCase() === 'y') annotDispatch({ type: 'redo' });
       else if (e.key === 'Delete' && annots.selected) annotDispatch({ type: 'remove', id: annots.selected });
@@ -279,7 +408,7 @@ export function DocumentView({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [active, annots.selected, annotDispatch, tool]);
+  }, [active, annots.selected, annotDispatch, tool, redacting, redact.selected, redactDispatch, redactTool]);
 
   // Web links in the document: show the address and ask first. Links inside the document
   // (to another page) are handled by pdf.js as usual.
@@ -303,7 +432,16 @@ export function DocumentView({
   };
 
   const zoomKnown = ZOOM_CHOICES.some((z) => z.value === zoom.value);
-  const selectedAnnot = annots.items.find((a) => a.id === annots.selected) ?? null;
+  const selectedAnnot = redacting ? null : (annots.items.find((a) => a.id === annots.selected) ?? null);
+  const selectedMark = redacting ? (redact.marks.find((m) => m.id === redact.selected) ?? null) : null;
+  const switchMode = (next: 'annotate' | 'redact') => {
+    setMode(next);
+    setTool('select');
+    setRedactTool('select');
+    annotDispatch({ type: 'select', id: null });
+    redactDispatch({ type: 'select', id: null });
+  };
+  const lead = <ModeSwitch mode={mode} onMode={switchMode} />;
 
   return (
     <div className="sf-document">
@@ -399,7 +537,28 @@ export function DocumentView({
           This shows the file as it was opened. Your changes on the Pages screen go into the new file when you save.
         </p>
       )}
+      {redacting ? (
+        <RedactToolbar
+          lead={lead}
+          tool={redactTool}
+          onTool={(t) => {
+            setRedactTool(t);
+            if (t !== 'select') redactDispatch({ type: 'select', id: null });
+          }}
+          onFind={(term) => void findAndMark(term)}
+          finding={finding}
+          canUndo={redact.past.length > 0}
+          canRedo={redact.future.length > 0}
+          onUndo={() => redactDispatch({ type: 'undo' })}
+          onRedo={() => redactDispatch({ type: 'redo' })}
+          marks={redact.marks.length}
+          onReview={onRedact}
+          working={working}
+          status={findResult}
+        />
+      ) : (
       <AnnotateToolbar
+        lead={lead}
         tool={tool}
         onTool={(t) => {
           setTool(t);
@@ -414,14 +573,16 @@ export function DocumentView({
         onSave={onSave}
         working={working}
       />
+      )}
       <div className="sf-document-body">
         {showThumbs && <Thumbnails pdf={pdf} currentPage={page} onSelect={goTo} />}
         <div className="sf-viewer-frame">
           <div
             ref={containerRef}
-            className={`sf-viewer-container${tool === 'note' || tool === 'text' ? ' sf-placing' : ''}`}
+            className={`sf-viewer-container${!redacting && (tool === 'note' || tool === 'text') ? ' sf-placing' : ''}${redacting && redactTool === 'area' ? ' sf-drawing' : ''}`}
             data-testid="viewer"
-            data-tool={tool}
+            data-tool={redacting ? `redact-${redactTool}` : tool}
+            onMouseDownCapture={startArea}
             onClickCapture={onClickCapture}
             onMouseUp={markSelection}
             onAuxClickCapture={onAuxClickCapture}
@@ -432,12 +593,23 @@ export function DocumentView({
               container={containerRef.current}
               annots={annots.items}
               selected={annots.selected}
-              interactive={tool === 'select'}
+              interactive={!redacting && tool === 'select'}
               layout={layout}
               onSelect={(id) => annotDispatch({ type: 'select', id })}
             />
+            <RedactionLayer
+              viewer={viewerRef.current}
+              container={containerRef.current}
+              marks={redact.marks}
+              selected={redact.selected}
+              interactive={redacting && redactTool === 'select'}
+              drag={drag}
+              layout={layout}
+              onSelect={(id) => redactDispatch({ type: 'select', id })}
+            />
           </div>
           {selectedAnnot && <AnnotationPanel annot={selectedAnnot} dispatch={annotDispatch} focusText={justPlaced === selectedAnnot.id} />}
+          {selectedMark && <MarkPanel mark={selectedMark} marks={redact.marks} dispatch={redactDispatch} />}
         </div>
       </div>
     </div>

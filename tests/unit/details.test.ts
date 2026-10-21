@@ -2,21 +2,16 @@
 // details and layers of new files. Required checks: edited details read back the same from the
 // classic details and XMP, the old values are found nowhere, and a file carrying one of each
 // item shows every one.
-import { execFileSync } from 'node:child_process';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { buildPdf } from '../../src/engine/build';
 import { inspectPdf } from '../../src/engine/inspect';
 import type { PageItem, SourceInput } from '../../src/engine/types';
 import { readXmp, splitKeywords, writeXmp } from '../../src/engine/xmp';
-import { drawnText, findEverywhere, fixture, pageTexts, readerDetails, ROOT, strayPages } from './support/inspect';
+import { drawnText, findEverywhere, fixture, pageTexts, readerDetails, strayPages } from './support/inspect';
 
 const source = (name: string, password?: string): SourceInput => ({ id: name, name, bytes: fixture(name), password });
 const pages = (name: string, list: number[]): PageItem[] => list.map((n) => ({ kind: 'page', source: name, index: n - 1, rotate: 0 }));
 const NOW = new Date('2026-10-19T15:30:00Z');
-
-beforeAll(() => {
-  execFileSync(process.execPath, ['scripts/make-fixtures.mjs'], { cwd: ROOT, stdio: 'ignore' });
-}, 120_000);
 
 describe('XMP', () => {
   const wrap = (body: string, extra = '') =>

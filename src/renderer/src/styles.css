@@ -429,6 +429,32 @@ input[type='checkbox']:checked::before {
 .sf-annot-panel h2 { margin: 0; font-size: 1rem; }
 .sf-annot-panel .sf-dialog-buttons { margin-top: 0.75rem; }
 
+/* ---------- redacting ---------- */
+
+/* Annotate or Redact, at the start of the Document screen's second toolbar. */
+.sf-mode { display: inline-flex; margin-right: 0.5rem; border: 1px solid var(--sf-outline); border-radius: 6px; overflow: hidden; }
+.sf-mode-option { min-height: 2.25rem; padding: 0.25rem 0.75rem; border: 0; background: transparent; color: var(--sf-text); cursor: pointer; }
+.sf-mode-option[aria-checked='true'] { background: var(--sf-button-bg); color: var(--sf-button-text); font-weight: 600; }
+.sf-mode-option:focus-visible { outline-offset: -3px; }
+
+/* Mark area: dragging draws a box, so text isn't selected meanwhile. */
+.sf-drawing .page, .sf-drawing .textLayer, .sf-drawing .textLayer span { cursor: crosshair; user-select: none; }
+
+/* Marks not applied yet: see-through black with a red edge, so what's under them can be checked. */
+.sf-redact-layer { position: absolute; left: 0; top: 0; width: 0; height: 0; z-index: 6; pointer-events: none; }
+.sf-redact-part, .sf-redact-drag { position: absolute; }
+.sf-redact-part { outline: 2px solid var(--sf-redact-outline); }
+.sf-redact-part::before { content: ''; position: absolute; inset: 0; background: var(--sf-redact-fill); opacity: 0.45; }
+.sf-redact-interactive .sf-redact-part { pointer-events: auto; cursor: pointer; }
+.sf-redact-mark:focus-visible { outline: none; }
+.sf-redact-mark[data-selected='true'] .sf-redact-part,
+.sf-redact-mark:focus-visible .sf-redact-part { outline: 3px solid var(--sf-link); }
+.sf-redact-drag { outline: 2px dashed var(--sf-redact-outline); }
+
+.sf-marks-page h3 { margin: 0.75rem 0 0.25rem; font-size: 1rem; }
+.sf-marks-page ul { margin: 0; padding: 0; list-style: none; }
+.sf-marks-page li { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.25rem 0; border-top: 1px solid var(--sf-line); overflow-wrap: anywhere; }
+
 /* ---------- pages ---------- */
 
 .sf-dot {

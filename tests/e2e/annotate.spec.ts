@@ -146,7 +146,7 @@ test('highlight, note and text box, saved as a new file that other readers show'
   await expect(tool(win, 'Select')).toHaveAttribute('aria-pressed', 'true');
 
   // Text box, in red.
-  await toolbar(win).getByRole('radio', { name: 'Red' }).click();
+  await toolbar(win).getByRole('radio', { name: 'Red', exact: true }).click();
   await tool(win, 'Text box').click();
   await clickPage(win, 1, 0.3, 0.6);
   await expect(panel(win)).toContainText('Text box on page 1');
@@ -158,7 +158,7 @@ test('highlight, note and text box, saved as a new file that other readers show'
   // Unsaved: the Pages screen doesn't get the page-changes dot, but closing asks first.
   await expect(win.getByRole('button', { name: 'Pages', exact: true }).locator('.sf-dot')).toHaveCount(0);
   await win.getByRole('button', { name: 'Close document' }).click();
-  await expect(win.getByTestId('confirm-dialog')).toContainText('pages, annotations or details');
+  await expect(win.getByTestId('confirm-dialog')).toContainText('pages, annotations, details or redaction marks');
   await win.getByTestId('confirm-dialog').getByRole('button', { name: 'Keep editing' }).click();
 
   // Save. The original is untouched (checked after all tests) and the new file opens.

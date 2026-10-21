@@ -1,6 +1,9 @@
 import type { ThemeId } from './themes';
 
 export type TextSize = 'standard' | 'large' | 'larger';
+/** How sharp redacted pages are, in dots per inch (Phase 0 plan, question 4). */
+export type RedactionDpi = 150 | 200 | 300;
+export const REDACTION_DPIS: readonly RedactionDpi[] = [150, 200, 300];
 
 export interface Settings {
   version: 1;
@@ -12,6 +15,7 @@ export interface Settings {
   authorName: string;
   /** Before saving, show what the new file carries (details, attachments, comments, …). */
   reviewBeforeSave: boolean;
+  redactionDpi: RedactionDpi;
 }
 
 export const MAX_RECENT = 10;
@@ -25,6 +29,7 @@ export const DEFAULT_SETTINGS: Settings = {
   recentFiles: [],
   authorName: '',
   reviewBeforeSave: true,
+  redactionDpi: 200,
 };
 
 const THEMES: readonly ThemeId[] = ['cathedral', 'light', 'dark', 'high-contrast', 'system'];
@@ -70,6 +75,10 @@ export function validateSettings(raw: unknown): { settings: Settings; problems: 
   if (r.reviewBeforeSave !== undefined) {
     if (typeof r.reviewBeforeSave === 'boolean') settings.reviewBeforeSave = r.reviewBeforeSave;
     else problems.push('reviewBeforeSave');
+  }
+  if (r.redactionDpi !== undefined) {
+    if (REDACTION_DPIS.includes(r.redactionDpi as RedactionDpi)) settings.redactionDpi = r.redactionDpi as RedactionDpi;
+    else problems.push('redactionDpi');
   }
   if (!settings.rememberRecent) settings.recentFiles = [];
   return { settings, problems };

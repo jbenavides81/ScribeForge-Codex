@@ -1,6 +1,5 @@
 // Stop 1c: annotations added in ScribeForge are saved as standard PDF annotations that another
 // reader (pdf.js here, standing in for any reader) reads back exactly.
-import { execFileSync } from 'node:child_process';
 import { PDFArray, PDFDict, PDFDocument, PDFName, PDFRawStream, PDFString, StandardFonts, decodePDFRawStream } from '@cantoo/pdf-lib';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { wrapText } from '../../src/engine/annotate';
@@ -8,13 +7,12 @@ import { buildPdf } from '../../src/engine/build';
 import type { AnnotationInput, PageItem, Quad, SourceInput } from '../../src/engine/types';
 import { ANNOTATION_COLOURS, pdfColour } from '../../src/shared/annotationColours';
 import { contrastRatio } from '../../src/shared/themes';
-import { annotations, findEverywhere, fixture, ROOT, strayPages } from './support/inspect';
+import { annotations, findEverywhere, fixture, strayPages } from './support/inspect';
 
 let links: SourceInput;
 const pages = (list: number[], rotate: 0 | 90 = 0): PageItem[] => list.map((n) => ({ kind: 'page', source: 'a', index: n - 1, rotate }));
 
 beforeAll(() => {
-  execFileSync(process.execPath, ['scripts/make-fixtures.mjs'], { cwd: ROOT, stdio: 'ignore' });
   links = { id: 'a', name: 'links.pdf', bytes: fixture('links.pdf') };
 }, 120_000);
 

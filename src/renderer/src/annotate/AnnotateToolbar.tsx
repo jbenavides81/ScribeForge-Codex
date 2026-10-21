@@ -1,4 +1,4 @@
-import type { CSSProperties } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { ANNOTATION_COLOURS } from '../../../shared/annotationColours';
 import { Icon, type IconName } from '../components/Icon';
 
@@ -14,6 +14,7 @@ export const TOOLS: { id: Tool; label: string; icon: IconName; hint: string }[] 
 ];
 
 export function AnnotateToolbar({
+  lead,
   tool,
   onTool,
   colourId,
@@ -25,6 +26,8 @@ export function AnnotateToolbar({
   onSave,
   working,
 }: {
+  /** Shown first: the Annotate / Redact switch. */
+  lead?: ReactNode;
   tool: Tool;
   onTool: (tool: Tool) => void;
   colourId: string;
@@ -39,6 +42,7 @@ export function AnnotateToolbar({
   const hint = TOOLS.find((t) => t.id === tool)?.hint ?? '';
   return (
     <div className="sf-toolbar sf-annotate-bar" role="toolbar" aria-label="Annotate">
+      {lead}
       {TOOLS.map((t) => (
         <button key={t.id} type="button" className="sf-tool" aria-pressed={tool === t.id} onClick={() => onTool(t.id)}>
           <Icon name={t.icon} size={18} />

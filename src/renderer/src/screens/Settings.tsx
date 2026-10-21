@@ -1,6 +1,6 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import type { SettingsChange } from '../../../shared/api';
-import { MAX_AUTHOR_NAME, type Settings as AppSettings, type TextSize } from '../../../shared/settings';
+import { MAX_AUTHOR_NAME, REDACTION_DPIS, type Settings as AppSettings, type TextSize } from '../../../shared/settings';
 import { cssVariables, presetFor, THEME_CHOICES, type ThemeId } from '../../../shared/themes';
 
 const TEXT_SIZES: { id: TextSize; name: string }[] = [
@@ -124,6 +124,22 @@ export function Settings({
           Before saving, show what the new file carries
         </label>
         <p className="sf-muted">Such as its details, attached files, comments and hidden layers, so nothing goes out by surprise.</p>
+      </fieldset>
+
+      <fieldset className="sf-section">
+        <legend>
+          <h2>Redaction</h2>
+        </legend>
+        <p>Image quality of redacted pages</p>
+        <div className="sf-choice-row">
+          {REDACTION_DPIS.map((dpi) => (
+            <label key={dpi} className="sf-choice">
+              <input type="radio" name="redaction-dpi" value={dpi} checked={settings.redactionDpi === dpi} onChange={() => onChange({ redactionDpi: dpi })} />
+              {dpi === 150 ? '150 dpi (smaller files)' : dpi === 200 ? '200 dpi' : '300 dpi (sharper)'}
+            </label>
+          ))}
+        </div>
+        <p className="sf-muted">Redacted pages become pictures of the page. 200 dpi is about half a megabyte a page.</p>
       </fieldset>
 
       <fieldset className="sf-section">

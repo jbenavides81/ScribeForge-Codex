@@ -33,3 +33,9 @@ export function pdfColour(hex: string): [number, number, number] {
   const h = hex.replace('#', '');
   return [0, 2, 4].map((i) => Math.round((parseInt(h.slice(i, i + 2), 16) / 255) * 1000) / 1000) as [number, number, number];
 }
+
+/**
+ * Redaction: the page behind a redacted page's image and the boxes burned into it; on screen,
+ * marks show as see-through black with a red edge until they're applied.
+ */
+export const REDACTION_COLOURS = { paper: '#FFFFFF', box: '#000000', outline: '#B71C1C' } as const;

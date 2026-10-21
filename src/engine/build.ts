@@ -12,12 +12,15 @@
 //    no longer reachable is swept out before saving.
 // 5. The new file's details are written twice, in the classic details and a fresh XMP copy, so
 //    the two always agree and nothing old from either is carried over.
+// 6. Redacting: marked pages are replaced by images of themselves with the marks blacked out,
+//    and the new file keeps only pages and the links between them (Phase 0 plan, section 9).
 import { degrees, PDFArray, PDFDict, PDFDocument, PDFObjectCopier, PDFPage, PDFString, type PDFFont, type PDFObject } from '@cantoo/pdf-lib';
 import { addAnnotations } from './annotate';
-import { documentActions, readInfo, readXmpFrom } from './inspect';
+import { countOutline, documentActions, readInfo, readXmpFrom } from './inspect';
 import { copyLayers } from './layers';
 import { cutStrayPageReferences, destinationTarget, N, nameOf, nameTreeEntries, openSource, sweepUnreachable } from './objects';
 import { readOutline, writeOutline, type OutlineNode, type PlacedBookmark } from './outline';
+import { imagePage, layersUsed, pruneUnusedXObjects, termsFound } from './redact';
 import {
   emptyReport,
   type AnnotationInput,
@@ -49,13 +52,18 @@ function readPlaceholder(obj: PDFObject | undefined): { source: string; index: n
 }
 
 /** Rule 2 and 3, applied to the source pages that will be copied. Changes the loaded copy only. */
-function prepareSourcePages(doc: PDFDocument, sourceId: string, indices: number[], report: BuildReport): void {
+function prepareSourcePages(doc: PDFDocument, sourceId: string, indices: number[], report: BuildReport, redacting: boolean): void {
   const pages = doc.getPages();
   const pageIndexByRef = new Map(pages.map((p, i) => [p.ref.toString(), i]));
   for (const index of indices) {
     const node = pages[index].node;
     node.delete(N('AA')); // page open/close actions
     node.delete(N('B')); // article threads, which point at other pages
+    if (redacting) {
+      // Data other programs keep with a page, out of sight.
+      node.delete(N('Metadata'));
+      node.delete(N('PieceInfo'));
+    }
     const annots = node.lookupMaybe(N('Annots'), PDFArray);
     if (!annots) continue;
     const ownAnnots = new Set<string>();
@@ -66,6 +74,13 @@ function prepareSourcePages(doc: PDFDocument, sourceId: string, indices: number[
       const annot = annots.lookup(k);
       if (!(annot instanceof PDFDict)) continue;
       const subtype = nameOf(annot.get(N('Subtype')));
+      if (redacting && subtype !== 'Link') {
+        // A redacted file keeps links between pages and nothing else.
+        if (subtype === 'Widget') report.formFieldsLeftOut++;
+        else if (subtype === 'FileAttachment') report.attachmentsLeftOut++;
+        else if (subtype !== 'Popup') report.commentsLeftOut++;
+        continue;
+      }
       annot.delete(N('P'));
       annot.delete(N('AA'));
       if (annot.has(N('IRT')) && !ownAnnots.has(String(annot.get(N('IRT'))))) annot.delete(N('IRT'));
@@ -197,9 +212,12 @@ export async function buildPdf(
   items: PageItem[],
   annotations: AnnotationInput[] = [],
   options: BuildOptions = {},
-): Promise<{ bytes: Uint8Array; report: BuildReport }> {
+): Promise<{ bytes: Uint8Array; report: BuildReport; found: string[] }> {
   if (items.length === 0) throw new Error('A PDF needs at least one page.');
   const report = emptyReport();
+  const redact = options.redact;
+  const redacting = redact !== undefined;
+  const redacted = (source: string, index: number) => redact?.[`${source}:${index}`];
 
   // Which pages of which sources are needed, in order of first use.
   const needed = new Map<string, number[]>();
@@ -221,11 +239,13 @@ export async function buildPdf(
       if (!Number.isInteger(index) || index < 0 || index >= count) throw new Error(`${source.name} has no page ${index + 1}`);
     }
     outlines.set(id, readOutline(doc));
+    if (redacting) report.bookmarksLeftOut += countOutline(outlines.get(id) ?? []);
     // Whole-document scripts and attachments aren't copied: pages are. The report says so.
     report.actionsRemoved += documentActions(doc).length;
     const names = doc.catalog.lookupMaybe(N('Names'), PDFDict);
     report.attachmentsLeftOut += nameTreeEntries(doc, names?.lookupMaybe(N('EmbeddedFiles'), PDFDict)).length;
-    prepareSourcePages(doc, id, needed.get(id) as number[], report);
+    const copied = (needed.get(id) as number[]).filter((index) => !redacted(id, index));
+    prepareSourcePages(doc, id, copied, report, redacting);
     docs.set(id, doc);
   }
 
@@ -234,11 +254,14 @@ export async function buildPdf(
   const out = await PDFDocument.create({ updateMetadata: false });
   const copies = new Map<string, Map<number, PDFPage>>();
   const copiers = new Map<string, PDFObjectCopier>();
-  for (const [id, indices] of needed) {
+  const keepLayers = new Map<string, Set<string>>();
+  for (const [id, all] of needed) {
     const doc = docs.get(id) as PDFDocument;
     const copier = PDFObjectCopier.for(doc.context, out.context);
     copiers.set(id, copier);
     const sourcePages = doc.getPages();
+    const indices = all.filter((index) => !redacted(id, index)); // marked pages are never copied
+    if (redacting) keepLayers.set(id, layersUsed(doc, indices.map((index) => sourcePages[index].node)));
     const pages = indices.map((index) => {
       const node = copier.copy(sourcePages[index].node);
       return PDFPage.of(node, out.context.register(node), out);
@@ -254,13 +277,23 @@ export async function buildPdf(
       placedPages.push(out.addPage([item.width, item.height]));
       continue;
     }
+    const key = `${item.source}:${item.index}`;
+    const image = redacted(item.source, item.index);
+    if (image) {
+      const own = (docs.get(item.source) as PDFDocument).getPage(item.index).getRotation().angle;
+      const page = await imagePage(out, image, normalise(own + item.rotate));
+      report.pagesRedacted++;
+      if (!where.has(key)) where.set(key, page);
+      placedPages.push(page);
+      continue;
+    }
     let page = copies.get(item.source)?.get(item.index) as PDFPage;
     // The same page twice: a separate copy (its layers, if any, are copied separately too).
     if (used.has(page)) [page] = await out.copyPages(docs.get(item.source) as PDFDocument, [item.index]);
     used.add(page);
     out.addPage(page);
     page.setRotation(degrees(normalise(page.getRotation().angle + item.rotate)));
-    const key = `${item.source}:${item.index}`;
+    if (redacting) pruneUnusedXObjects(out, page);
     if (!where.has(key)) where.set(key, page);
     placedPages.push(page);
   }
@@ -275,14 +308,17 @@ export async function buildPdf(
   }
   const fonts: { helvetica?: PDFFont } = {};
   for (const [key, list] of byPage) {
-    const page = where.get(key);
+    const page = redacting ? undefined : where.get(key);
     if (page) report.annotationsAdded += await addAnnotations(out, page, list, fonts);
     else report.annotationsLeftOut += list.length;
   }
 
   // Bookmarks: one source keeps its own; merged files each get a bookmark named after the file.
+  // A redacted file has none.
   const sourceOrder = [...needed.keys()];
-  if (sourceOrder.length === 1) {
+  if (redacting) {
+    // left out, and counted above
+  } else if (sourceOrder.length === 1) {
     writeOutline(out, placeBookmarks(outlines.get(sourceOrder[0]) ?? [], sourceOrder[0], where, report));
   } else {
     const top: PlacedBookmark[] = sourceOrder.map((id) => {
@@ -298,18 +334,29 @@ export async function buildPdf(
 
   copyLayers(
     out,
-    sourceOrder.map((id) => ({ name: sources.find((s) => s.id === id)?.name ?? id, doc: docs.get(id) as PDFDocument, copier: copiers.get(id) as PDFObjectCopier })),
+    sourceOrder.map((id) => ({
+      name: sources.find((s) => s.id === id)?.name ?? id,
+      doc: docs.get(id) as PDFDocument,
+      copier: copiers.get(id) as PDFObjectCopier,
+      keep: keepLayers.get(id),
+    })),
   );
 
-  // Document details, and the document's language, from the first source.
+  // Document details, and the document's language, from the first source. A redacted file has
+  // no details of its own: only that ScribeForge made it, and when.
   const first = docs.get(sourceOrder[0]);
-  writeDetails(out, first, options);
-  const lang = first?.catalog.get(N('Lang'));
-  if (lang instanceof PDFString) out.catalog.set(N('Lang'), lang);
+  if (redacting) {
+    writeDetails(out, undefined, { ...options, details: { title: '', author: '', subject: '', keywords: '' } });
+  } else {
+    writeDetails(out, first, options);
+    const lang = first?.catalog.get(N('Lang'));
+    if (lang instanceof PDFString) out.catalog.set(N('Lang'), lang);
+  }
 
   report.strayReferencesCut = cutStrayPageReferences(out);
   report.objectsSwept = sweepUnreachable(out);
   report.pages = placedPages.length;
   const bytes = await out.save({ useObjectStreams: true });
-  return { bytes, report };
+  const found = options.verifyTerms?.length ? await termsFound(bytes, options.verifyTerms) : [];
+  return { bytes, report, found };
 }

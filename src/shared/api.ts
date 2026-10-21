@@ -1,4 +1,4 @@
-import type { Settings, TextSize } from './settings';
+import type { RedactionDpi, Settings, TextSize } from './settings';
 import type { ThemeId } from './themes';
 
 /** A file the main process read for the screens. */
@@ -26,7 +26,14 @@ export interface AppInfo {
   settingsNotice: string | null;
 }
 
-export type SettingsChange = Partial<{ theme: ThemeId; textSize: TextSize; rememberRecent: boolean; authorName: string; reviewBeforeSave: boolean }>;
+export type SettingsChange = Partial<{
+  theme: ThemeId;
+  textSize: TextSize;
+  rememberRecent: boolean;
+  authorName: string;
+  reviewBeforeSave: boolean;
+  redactionDpi: RedactionDpi;
+}>;
 
 export interface SaveRequest {
   bytes: Uint8Array;

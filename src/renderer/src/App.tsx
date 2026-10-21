@@ -11,6 +11,7 @@ import { editReducer, emptyEdit, hasChanges, newKey, type Tile } from './pages/e
 import { PagesView } from './pages/PagesView';
 import { inspectDocument } from './pages/engineClient';
 import { useSaving, type ReviewRequest } from './pages/saving';
+import { emptyRedact, markLabel, marksByPage, redactReducer, type RedactMark } from './redact/redactState';
 import { engineInput, type ConfirmRequest, type SourceDoc } from './pages/sources';
 import { About } from './screens/About';
 import { Details } from './screens/Details';
@@ -96,6 +97,10 @@ export function App() {
   const [docReport, setDocReport] = useState<DocReport | null>(null);
   const [detailsEdit, setDetailsEdit] = useState<Partial<DocInfo>>({});
   const [reviewing, setReviewing] = useState<(ReviewRequest & { resolve: (ok: boolean) => void }) | null>(null);
+  const [redact, redactDispatch] = useReducer(redactReducer, emptyRedact);
+  const [reviewingMarks, setReviewingMarks] = useState<{ resolve: (marks: RedactMark[] | null) => void } | null>(null);
+  const redactRef = useRef(redact);
+  redactRef.current = redact;
   const docRef = useRef<OpenDocument | null>(null);
   docRef.current = doc;
   const addedRef = useRef<SourceDoc[]>([]);
@@ -127,11 +132,13 @@ export function App() {
   const detailValues: DocInfo | undefined = report ? { ...report.details.shown, ...detailsEdit } : undefined;
   const detailsChanged = !!report && DOC_INFO_FIELDS.some((f) => detailsEdit[f] !== undefined && detailsEdit[f] !== report.details.shown[f]);
 
-  // Closing the window asks first while page changes, annotations or details aren't saved.
+  // Closing the window asks first while page changes, annotations, details or redaction marks
+  // aren't saved.
   const pagesChanged = hasChanges(edit);
-  const dirty = pagesChanged || hasAnnotChanges(annots) || detailsChanged;
-  const dirtyRef = useRef(dirty);
-  dirtyRef.current = dirty;
+  const otherChanges = pagesChanged || hasAnnotChanges(annots) || detailsChanged;
+  const dirty = otherChanges || redact.marks.length > 0;
+  const dirtyRef = useRef({ other: otherChanges, marks: redact.marks.length > 0 });
+  dirtyRef.current = { other: otherChanges, marks: redact.marks.length > 0 };
   useEffect(() => api.setUnsaved(dirty), [dirty]);
 
   // Read the open document's details and contents in the background.
@@ -160,11 +167,11 @@ export function App() {
 
   /** Runs `action` now, or after the person agrees to lose unsaved changes. */
   const unlessUnsaved = useCallback(
-    async (action: () => void | Promise<void>) => {
-      if (dirtyRef.current) {
+    async (action: () => void | Promise<void>, { marksApplied = false } = {}) => {
+      if (dirtyRef.current.other || (!marksApplied && dirtyRef.current.marks)) {
         const ok = await confirm({
           title: 'Discard your changes?',
-          message: "You have changes to pages, annotations or details that aren't saved yet. If you continue, they are lost.",
+          message: "You have changes to pages, annotations, details or redaction marks that aren't saved yet. If you continue, they are lost.",
           confirmLabel: 'Discard changes',
           cancelLabel: 'Keep editing',
         });
@@ -192,6 +199,7 @@ export function App() {
     setAdded([]);
     dispatch({ type: 'reset', tiles: [] });
     annotDispatch({ type: 'reset' });
+    redactDispatch({ type: 'reset' });
     setDetailsEdit({});
     setDocReport(null);
     setScreen('start');
@@ -216,6 +224,7 @@ export function App() {
       setAdded([]);
       dispatch({ type: 'reset', tiles: pageTiles(`doc${id}`, pdf.numPages) });
       annotDispatch({ type: 'reset' });
+      redactDispatch({ type: 'reset' });
       setDetailsEdit({});
       setScreen('document');
       release([previous?.pdf, ...extra.map((s) => s.pdf)]);
@@ -327,10 +336,14 @@ export function App() {
     details: detailValues,
     producer: info ? `ScribeForge ${info.version}` : 'ScribeForge',
     reviewBeforeSave: settings?.reviewBeforeSave ?? true,
+    redactionDpi: settings?.redactionDpi ?? 200,
     confirm,
     review: (request) => new Promise<boolean>((resolve) => setReviewing({ ...request, resolve })),
+    reviewMarks: () => new Promise<RedactMark[] | null>((resolve) => setReviewingMarks({ resolve })),
     onMessage: setMessage,
     onSaved: (path) => void api.openPath(path).then(handleResult),
+    // The marks are applied, so they don't count as unsaved; anything else still asks first.
+    onRedacted: (path) => void unlessUnsaved(async () => handleResult(await api.openPath(path)), { marksApplied: true }),
   });
   const saveAllRef = useRef(saving.saveAll);
   saveAllRef.current = saving.saveAll;
@@ -419,6 +432,9 @@ export function App() {
               command={command}
               annots={annots}
               annotDispatch={annotDispatch}
+              redact={redact}
+              redactDispatch={redactDispatch}
+              onRedact={() => void saving.redact()}
               active={screen === 'document'}
               working={saving.working}
               onSave={() => void saving.saveAll()}
@@ -471,9 +487,70 @@ export function App() {
       </main>
 
       {password && <PasswordDialog key={password.id} request={password} />}
+      {reviewingMarks && (
+        <Dialog
+          title={redact.marks.length === 1 ? 'Redact 1 mark?' : `Redact ${redact.marks.length} marks?`}
+          onCancel={() => {
+            reviewingMarks.resolve(null);
+            setReviewingMarks(null);
+          }}
+          testId="marks-dialog"
+          wide
+        >
+          <p>
+            Check the marks. Pages with a mark become pictures with the marked parts blacked out, so their text can't be selected, searched or copied.
+            Pages without marks are copied as they are.
+          </p>
+          <p className="sf-muted">
+            The redacted file won't include comments, form fields, bookmarks, attached files, the document's details or scripts, or any annotations you
+            added.
+          </p>
+          <div className="sf-dialog-scroll" tabIndex={0} aria-label="Redaction marks">
+            {redact.marks.length === 0 && <p>There are no marks left.</p>}
+            {marksByPage(redact.marks).map(([page, list]) => (
+              <section key={page} className="sf-marks-page">
+                <h3>Page {page + 1}</h3>
+                <ul>
+                  {list.map((m) => (
+                    <li key={m.id}>
+                      <span>{markLabel(m)}</span>
+                      <button type="button" className="sf-button" aria-label={`Remove ${markLabel(m)} on page ${page + 1}`} onClick={() => redactDispatch({ type: 'remove', ids: [m.id] })}>
+                        Remove
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ))}
+          </div>
+          <div className="sf-dialog-buttons">
+            <button
+              type="button"
+              className="sf-button"
+              onClick={() => {
+                reviewingMarks.resolve(null);
+                setReviewingMarks(null);
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="sf-button sf-primary"
+              disabled={redact.marks.length === 0}
+              onClick={() => {
+                reviewingMarks.resolve(redactRef.current.marks);
+                setReviewingMarks(null);
+              }}
+            >
+              Redact…
+            </button>
+          </div>
+        </Dialog>
+      )}
       {reviewing && (
         <Dialog
-          title={reviewing.files === 1 ? 'What the new file carries' : `What the ${reviewing.files} new files carry`}
+          title={reviewing.title ?? (reviewing.files === 1 ? 'What the new file carries' : `What the ${reviewing.files} new files carry`)}
           onCancel={() => {
             reviewing.resolve(false);
             setReviewing(null);

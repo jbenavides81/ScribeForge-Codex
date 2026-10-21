@@ -8,8 +8,11 @@ import { THEME_CHOICES } from '../../src/shared/themes';
 import { closeApp, goTo, launch, openFixture, SCREENS, setTheme, waitForFirstPage } from './helpers';
 
 const SCREEN_NAMES = ['Start', 'Document', 'Pages', 'Details', 'Settings', 'About'] as const;
-/** Each theme's row also shows the list of what a new file carries, before saving. */
-const COLUMNS = SCREEN_NAMES.length + 1;
+/**
+ * Each theme's row also shows the list of what a new file carries before saving, the Document
+ * screen in Redact mode with a mark selected, and the list of marks before redacting.
+ */
+const COLUMNS = SCREEN_NAMES.length + 3;
 
 test('screenshots of every screen in every theme', async ({}, info) => {
   test.setTimeout(300_000);
@@ -43,10 +46,26 @@ test('screenshots of every screen in every theme', async ({}, info) => {
   await annotate.getByRole('radio', { name: 'Blue' }).click();
   await markText('Underline', 'This is page 1');
   await place('Note', 0.55, 0.12, 'A note');
-  await annotate.getByRole('radio', { name: 'Red' }).click();
+  await annotate.getByRole('radio', { name: 'Red', exact: true }).click();
   await place('Text box', 0.12, 0.3, 'Approved by the team');
-  await annotate.getByRole('button', { name: 'Select', exact: true }).click();
-  await win.locator('.sf-annot-highlight .sf-annot-part').first().click();
+  // Redaction marks: a search, and an area.
+  const tools = win.getByRole('radiogroup', { name: 'Tools' });
+  const redactBar = win.getByRole('toolbar', { name: 'Redact' });
+  await tools.getByRole('radio', { name: 'Redact' }).click();
+  await redactBar.getByLabel('Text to find and mark').fill('UNIQUE-PAGE');
+  await redactBar.getByRole('button', { name: 'Mark all' }).click();
+  await redactBar.getByRole('button', { name: 'Mark area', exact: true }).click();
+  const area = (await page1.boundingBox())!;
+  await win.mouse.move(area.x + area.width * 0.55, area.y + area.height * 0.3);
+  await win.mouse.down();
+  await win.mouse.move(area.x + area.width * 0.85, area.y + area.height * 0.4, { steps: 4 });
+  await win.mouse.up();
+  await tools.getByRole('radio', { name: 'Annotate' }).click();
+  const selectHighlight = async () => {
+    await annotate.getByRole('button', { name: 'Select', exact: true }).click();
+    await win.locator('.sf-annot-highlight .sf-annot-part').first().click();
+  };
+  await selectHighlight();
   // Some page changes, so the Pages screen shows selection, rotation and the unsaved marker.
   await goTo(win, 'Pages');
   await win.getByRole('option', { name: /^Page 1/ }).click();
@@ -77,6 +96,24 @@ test('screenshots of every screen in every theme', async ({}, info) => {
     await win.screenshot({ path: reviewFile });
     row.push(reviewFile);
     await review.getByRole('button', { name: 'Cancel' }).click();
+
+    await goTo(win, 'Document');
+    await tools.getByRole('radio', { name: 'Redact' }).click();
+    await redactBar.getByRole('button', { name: 'Select', exact: true }).click();
+    await win.locator('.sf-redact-mark[data-kind="area"] .sf-redact-part').first().click();
+    await win.waitForTimeout(300);
+    const redactFile = path.join(SCREENS, `${theme.id}-redact.png`);
+    await win.screenshot({ path: redactFile });
+    row.push(redactFile);
+    await redactBar.getByRole('button', { name: 'Review and redact…' }).click();
+    await win.getByTestId('marks-dialog').waitFor();
+    await win.waitForTimeout(200);
+    const marksFile = path.join(SCREENS, `${theme.id}-marks.png`);
+    await win.screenshot({ path: marksFile });
+    row.push(marksFile);
+    await win.getByTestId('marks-dialog').getByRole('button', { name: 'Cancel' }).click();
+    await tools.getByRole('radio', { name: 'Annotate' }).click();
+    await selectHighlight();
     shots.push(row);
   }
   // The larger text sizes, on the busiest screens.
@@ -95,8 +132,8 @@ test('screenshots of every screen in every theme', async ({}, info) => {
   }
   await closeApp(app);
 
-  // Contact sheet: one row per theme (Start, Document, Pages, Details, Settings, About, and the
-  // before-save list), then text sizes.
+  // Contact sheet: one row per theme (Start, Document, Pages, Details, Settings, About, the
+  // before-save list, Redact mode and the marks list), then text sizes.
   const scale = 0.3;
   const w = Math.round(1280 * scale);
   const h = Math.round(800 * scale);
