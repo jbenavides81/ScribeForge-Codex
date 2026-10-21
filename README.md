@@ -108,7 +108,7 @@ npm run trial:reset
 | `npm run icons` | Redraws the app icon (`build/icon.png`, `build/icon.ico`) and its contact sheet (`docs/icon-sheet.png`) |
 | `npm start` | Builds the app and runs it as installed (with your real settings, not trial mode) |
 
-**While the whole-app tests run,** test windows open on your left-most monitor and never take keyboard focus, so you can keep working on another screen. Each test uses its own throwaway data folder in the Windows temp folder, removed when the run finishes. Screenshots of every screen in every theme go to `test-results\screens`, with a `contact-sheet.png`.
+**While the whole-app tests run,** test windows open on your left-most monitor, never take keyboard focus, and let your mouse pass straight through them, so you can keep working on another screen. Each test uses its own throwaway data folder in the Windows temp folder, removed when the run finishes. Screenshots of every screen in every theme go to `test-results\screens`, with a `contact-sheet.png`.
 
 ## Where things are
 

@@ -18,7 +18,7 @@ export interface Running {
 
 /**
  * Starts ScribeForge with its own throwaway data folder. The window opens on the left-most
- * monitor without taking keyboard focus.
+ * monitor without taking keyboard focus, and the real mouse passes through it.
  */
 export async function launch(project: string, userData?: string, extraEnv: Record<string, string> = {}): Promise<Running> {
   const data = userData ?? mkdtempSync(path.join(tmpdir(), 'scribeforge-e2e-'));
