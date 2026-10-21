@@ -6,8 +6,7 @@ import { copyFileSync, existsSync, mkdtempSync, readdirSync, readFileSync } from
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { bookmarks, findEverywhere, pageIds, pageTexts, rotations, strayPages } from '../unit/support/inspect';
-import {
-  answerDialogs,
+import { choose, answerDialogs,
   blockedRequests,
   closeApp,
   dialogLog,
@@ -18,8 +17,7 @@ import {
   openFixture,
   passReview,
   waitForFirstPage,
-  type Running,
-} from './helpers';
+  type Running } from './helpers';
 
 let hashesBefore: Record<string, string>;
 test.beforeAll(() => {
@@ -155,7 +153,7 @@ test('split into files in a chosen folder; ranges are checked first', async ({},
 
   // Splitting again into the same folder never overwrites: the new files get " 2".
   await win.getByRole('button', { name: 'Split…' }).click();
-  await win.getByTestId('split-dialog').getByLabel('Every page as its own file').check();
+  await choose(win.getByTestId('split-dialog').getByLabel('Every page as its own file'));
   await win.getByTestId('split-dialog').getByRole('button', { name: 'Choose a folder and split' }).click();
   await passReview(win);
   await expect(win.getByTestId('message')).toContainText('Split into 6 files');
@@ -287,7 +285,7 @@ test('merging two 600-page files in the app takes under 10 seconds', async ({}, 
   const target = path.join(outDir(), 'big.pdf');
   await answerDialogs(app, { saveAs: target });
   await goTo(win, 'Settings');
-  await win.getByLabel('Before saving, show what the new file carries').uncheck();
+  await choose(win.getByLabel('Before saving, show what the new file carries'), false);
   await goTo(win, 'Pages');
   const start = Date.now();
   await win.getByRole('button', { name: 'Save as new file…' }).click();

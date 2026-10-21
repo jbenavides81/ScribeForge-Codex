@@ -7,6 +7,7 @@ import path from 'node:path';
 import { findEverywhere, links, pageTexts } from '../unit/support/inspect';
 import {
   answerDialogs,
+  choose,
   blockedRequests,
   closeApp,
   dialogLog,
@@ -165,8 +166,7 @@ test('nothing is saved until the end; marks count as unsaved; the resolution com
   const run = (current = await launch(info.project.name));
   const { app, win } = run;
   await goTo(win, 'Settings');
-  await win.getByLabel('300 dpi (sharper)').click();
-  await expect(win.getByLabel('300 dpi (sharper)')).toBeChecked();
+  await choose(win.getByLabel('300 dpi (sharper)'));
   await startRedacting(run, 'redaction.pdf');
   await findAndMark(win, TERM);
   await expect(marks(win)).toHaveCount(4);

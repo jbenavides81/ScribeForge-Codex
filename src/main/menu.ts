@@ -40,7 +40,11 @@ export function buildMenu(win: BrowserWindow): void {
     },
     {
       label: '&Help',
-      submenu: [{ label: '&About ScribeForge', click: send('show-about') }],
+      submenu: [
+        { label: 'ScribeForge &help', accelerator: 'F1', click: send('show-help') },
+        { type: 'separator' },
+        { label: '&About ScribeForge', click: send('show-about') },
+      ],
     },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));

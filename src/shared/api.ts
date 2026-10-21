@@ -66,7 +66,8 @@ export type MenuCommand =
   | 'show-pages'
   | 'show-details'
   | 'show-settings'
-  | 'show-about';
+  | 'show-about'
+  | 'show-help';
 
 /** What the preload script makes available to the screens as `window.scribeforge`. */
 export interface ScribeForgeApi {

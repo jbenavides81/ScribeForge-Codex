@@ -5,9 +5,9 @@ import { createCanvas, loadImage } from '@napi-rs/canvas';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { THEME_CHOICES } from '../../src/shared/themes';
-import { closeApp, goTo, launch, openFixture, SCREENS, setTheme, waitForFirstPage } from './helpers';
+import { choose, closeApp, goTo, launch, openFixture, SCREENS, setTheme, waitForFirstPage } from './helpers';
 
-const SCREEN_NAMES = ['Start', 'Document', 'Pages', 'Details', 'Settings', 'About'] as const;
+const SCREEN_NAMES = ['Start', 'Document', 'Pages', 'Details', 'Settings', 'Help', 'About'] as const;
 /**
  * Each theme's row also shows the list of what a new file carries before saving, the Document
  * screen in Redact mode with a mark selected, and the list of marks before redacting.
@@ -121,7 +121,7 @@ test('screenshots of every screen in every theme', async ({}, info) => {
   const sizes: string[] = [];
   for (const size of ['large', 'larger']) {
     await goTo(win, 'Settings');
-    await win.locator(`input[name="text-size"][value="${size}"]`).check();
+    await choose(win.locator(`input[name="text-size"][value="${size}"]`));
     for (const screen of ['Document', 'Pages', 'Details'] as const) {
       await goTo(win, screen);
       await win.waitForTimeout(500);

@@ -17,7 +17,7 @@ asar: true
 npmRebuild: false
 win:
   target: nsis
-  icon: build/icon.png
+  icon: build/icon.ico
 nsis:
   oneClick: false
   perMachine: false
@@ -25,3 +25,6 @@ nsis:
   artifactName: ${productName} Setup ${version}.${ext}
   shortcutName: ScribeForge
   uninstallDisplayName: ScribeForge
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  installerHeaderIcon: build/icon.ico

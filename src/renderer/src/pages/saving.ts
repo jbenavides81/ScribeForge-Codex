@@ -68,8 +68,9 @@ export function useSaving({
   /** Shows the redaction marks for checking. The marks left when the person goes on, or null. */
   reviewMarks: () => Promise<RedactMark[] | null>;
   onMessage: (text: string) => void;
-  onSaved: (path: string) => void;
-  onRedacted: (path: string) => void;
+  /** Opens the saved file; the message about saving is shown once it's open. */
+  onSaved: (path: string) => Promise<void>;
+  onRedacted: (path: string) => Promise<void>;
 }) {
   const [working, setWorking] = useState<string | null>(null);
   const busy = useRef(false);
@@ -138,8 +139,11 @@ export function useSaving({
       setWorking('Saving…');
       const result = await api.saveFile({ bytes, suggestedName: name, sourcePaths: sources.map((s) => s.path) });
       if (result.ok) {
+        if (openAfter) {
+          setWorking('Opening the new file…');
+          await onSaved(result.path);
+        }
         onMessage(savedMessage(result.path, report));
-        if (openAfter) onSaved(result.path);
       } else if (result.reason === 'failed') onMessage(result.message ?? "ScribeForge couldn't save the file.");
     });
 
@@ -219,8 +223,10 @@ export function useSaving({
       setWorking('Saving…');
       const result = await api.saveFile({ bytes, suggestedName: name, sourcePaths: sources.map((s) => s.path) });
       if (result.ok) {
+        // Shown first: opening the redacted file may ask about other unsaved changes.
         onMessage(redactedMessage(result.path, report));
-        onRedacted(result.path);
+        setWorking('Opening the new file…');
+        await onRedacted(result.path);
       } else if (result.reason === 'failed') onMessage(result.message ?? "ScribeForge couldn't save the file.");
     });
 

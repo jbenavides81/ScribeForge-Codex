@@ -50,3 +50,12 @@ describe('third-party notices', () => {
     expect([...imported].filter((p) => !SHIPPED.includes(p))).toEqual([]);
   });
 });
+
+describe('licence', () => {
+  it('is the Apache License 2.0, word for word (the copy that ships with pdf.js), as package.json says', () => {
+    const ours = readFileSync(path.join(ROOT, 'LICENSE'), 'utf8').replace(/\r/g, '');
+    const official = readFileSync(path.join(ROOT, 'node_modules/pdfjs-dist/LICENSE'), 'utf8').replace(/\r/g, '');
+    expect(ours).toBe(official);
+    expect(JSON.parse(readFileSync(path.join(ROOT, 'package.json'), 'utf8')).license).toBe('Apache-2.0');
+  });
+});

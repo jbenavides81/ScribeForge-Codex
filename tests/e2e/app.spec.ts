@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { PRESETS } from '../../src/shared/themes';
-import { blockedRequests, goTo, launch, openFixture, setTheme, waitForFirstPage, VERSION } from './helpers';
+import { choose, blockedRequests, goTo, launch, openFixture, setTheme, waitForFirstPage, VERSION } from './helpers';
 
 test('starts on the Start screen, shows About, and makes no network requests', async ({}, info) => {
   const run = await launch(info.project.name);
@@ -38,10 +38,10 @@ test('every theme and text size applies at once and is remembered after a restar
 
   await setTheme(win, 'high-contrast');
   for (const [size, px] of [['larger', '19px'], ['large', '17px'], ['standard', '15px']] as const) {
-    await win.locator(`input[name="text-size"][value="${size}"]`).check();
+    await choose(win.locator(`input[name="text-size"][value="${size}"]`));
     await expect.poll(() => win.evaluate(() => getComputedStyle(document.documentElement).fontSize)).toBe(px);
   }
-  await win.locator('input[name="text-size"][value="large"]').check();
+  await choose(win.locator('input[name="text-size"][value="large"]'));
   await first.app.close();
 
   const second = await launch(info.project.name, first.userData);
@@ -76,7 +76,7 @@ test('recent files: remembered, removable, clearable, and can be turned off', as
   await openFixture(run, 'normal.pdf');
   await waitForFirstPage(win);
   await goTo(win, 'Settings');
-  await win.getByLabel('Remember the files I open').uncheck();
+  await choose(win.getByLabel('Remember the files I open'), false);
   await goTo(win, 'Start');
   await expect(win.getByText('Recent files are turned off in Settings.')).toBeVisible();
   const saved = JSON.parse(readFileSync(path.join(run.userData, 'settings.json'), 'utf8'));

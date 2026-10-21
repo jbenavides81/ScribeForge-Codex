@@ -4,14 +4,14 @@ An open-source, offline PDF toolkit for Windows: view, organise, annotate, inspe
 
 ScribeForge never sends anything over the network, and it never changes the files you open: edits save to new files.
 
-**Status:** stops 1a to 1e are built. Version 0.5.0. You can:
+**Status:** Phase 1 is complete. Version 1.0.0. You can:
 - open, view, search and copy from PDFs;
 - on the Pages screen, merge, split, reorder, rotate, delete, extract and insert blank pages;
 - on the Document screen, highlight, underline and strike out text, and add notes and text boxes;
 - on the Details screen, see and change a file's title, author, subject and keywords, and see everything else it carries: attached files, form fields, comments, scripts, bookmarks, hidden layers and links;
 - on the Document screen in Redact mode, mark areas, selected text, or every match of a search, check the marks, and save a redacted copy.
 
-Everything saves to a new file. Before saving, ScribeForge shows what the new file will carry (you can turn this off in Settings).
+Everything saves to a new file. Before saving, ScribeForge shows what the new file will carry (you can turn this off in Settings). Help is built in: press F1.
 
 | Document | What it is |
 |---|---|
@@ -19,7 +19,21 @@ Everything saves to a new file. Before saving, ScribeForge shows what the new fi
 | [docs/ScribeForge_Claude_Code_Prompt.md](docs/ScribeForge_Claude_Code_Prompt.md) | The build prompt Claude Code works from |
 | [docs/Roadmap.md](docs/Roadmap.md) | Phases and stops, with each stop's required checks |
 | [docs/Phase0_Plan.md](docs/Phase0_Plan.md) | Phase 0 (approved): test results, dependencies, design and decisions |
-| [docs/manual-tests/](docs/manual-tests/) | Step-by-step scripts for trying each stop |
+| [docs/manual-tests/](docs/manual-tests/) | Step-by-step scripts for trying each stop, and [v1-full.md](docs/manual-tests/v1-full.md) for the installed app |
+| [content/help/](content/help/) | The help pages shown in the app (plain Markdown; edit them without touching code) |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | How to work on ScribeForge |
+
+## Installing ScribeForge
+
+1. Build the installer (see [Setting up](#setting-up-windows) first):
+   ```bash
+   npm run dist
+   ```
+   It's saved as `release\ScribeForge Setup 1.0.0.exe`.
+2. Run it. The installer isn't signed, so Windows shows "Windows protected your PC" the first time: click **More info**, then **Run anyway**.
+3. Choose **Only for me** and where to install it (your user folder by default; no administrator rights needed). ScribeForge is then in the Start menu.
+
+To remove it, use **Settings > Apps > Installed apps > ScribeForge > Uninstall** in Windows. Your settings stay in `%APPDATA%\ScribeForge`; delete that folder too if you want them gone.
 
 ## Setting up (Windows)
 
@@ -59,15 +73,14 @@ npm run trial:reset
 | `npm run typecheck` | Checks the TypeScript |
 | `npm test` | Unit tests, including the style-guard, contrast and third-party-notice checks |
 | `npm run e2e` | Builds the app and runs the whole-app tests on it (Playwright) |
-| `npm run e2e:packaged` | Builds the installed-app version (`release\win-unpacked`) and runs its tests |
+| `npm run e2e:packaged` | Builds the installed-app version (`release\win-unpacked`) and runs every whole-app test on it |
 | `npm run dist` | Builds the Windows installer: `release\ScribeForge Setup <version>.exe` |
 | `npm run fixtures` | Makes the test PDFs |
 | `npm run notices` | Rebuilds `THIRD-PARTY-NOTICES.md` from the installed packages |
-| `npm run icons` | Redraws `build/icon.png` from the icon draft |
+| `npm run icons` | Redraws the app icon (`build/icon.png`, `build/icon.ico`) and its contact sheet (`docs/icon-sheet.png`) |
+| `npm start` | Builds the app and runs it as installed (with your real settings, not trial mode) |
 
 **While the whole-app tests run,** test windows open on your left-most monitor and never take keyboard focus, so you can keep working on another screen. Each test uses its own throwaway data folder in the Windows temp folder, removed when the run finishes. Screenshots of every screen in every theme go to `test-results\screens`, with a `contact-sheet.png`.
-
-**The installer is unsigned,** so Windows shows "Windows protected your PC" the first time. Click **More info**, then **Run anyway**.
 
 ## Where things are
 
@@ -75,11 +88,13 @@ npm run trial:reset
 |---|---|
 | `src/main/` | The app process: window, menus, file dialogs, reading files, settings, the network guard |
 | `src/preload/` | The small bridge the screens are allowed to call |
-| `src/renderer/` | The screens (React), styles, the pdf.js viewer, annotating, and the Pages screen with its worker |
-| `src/engine/` | The PDF engine for the page tools, annotations and file details: plain TypeScript, run in a worker inside the window and in the unit tests |
+| `src/renderer/` | The screens (React), styles, the pdf.js viewer, annotating, redacting, help, and the Pages screen with its worker |
+| `src/engine/` | The PDF engine for the page tools, annotations, file details and redaction: plain TypeScript, run in a worker inside the window and in the unit tests |
 | `src/shared/` | Code used by both sides: themes and the annotation colours (the only places colours are defined), settings rules, link rules, pdf.js safety options |
 | `tests/unit/` | Unit tests (Vitest) |
 | `tests/e2e/` | Whole-app tests (Playwright), for the built app and the installed app |
+| `content/help/` | The help pages |
+| `build/` | The app icon, used by the installer |
 | `scripts/` | Trial mode, test PDFs, icon and notices |
 | `%APPDATA%\ScribeForge\settings.json` | Your settings and recent files (trial mode: `%APPDATA%\ScribeForge Trial`) |
 

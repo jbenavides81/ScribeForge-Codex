@@ -1,4 +1,4 @@
-import { _electron as electron, expect, type ElectronApplication, type Page } from '@playwright/test';
+import { _electron as electron, expect, type ElectronApplication, type Page, type Locator } from '@playwright/test';
 import { createHash } from 'node:crypto';
 import { mkdtempSync, readdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -113,7 +113,7 @@ export async function blockedRequests(app: ElectronApplication): Promise<string[
   return app.evaluate(() => [...((globalThis as Record<string, unknown>).__scribeforgeBlocked as string[])]);
 }
 
-export async function goTo(win: Page, screen: 'Start' | 'Document' | 'Pages' | 'Details' | 'Settings' | 'About'): Promise<void> {
+export async function goTo(win: Page, screen: 'Start' | 'Document' | 'Pages' | 'Details' | 'Settings' | 'Help' | 'About'): Promise<void> {
   await win.getByRole('navigation', { name: 'Main' }).getByRole('button', { name: screen, exact: true }).click();
 }
 
@@ -144,8 +144,15 @@ export function fixtureHashes(): Record<string, string> {
   return out;
 }
 
+/** Ticks (or unticks) a choice, then waits until it shows: settings are saved first, then shown. */
+export async function choose(input: Locator, on = true): Promise<void> {
+  if ((await input.isChecked()) !== on) await input.click();
+  if (on) await expect(input).toBeChecked();
+  else await expect(input).not.toBeChecked();
+}
+
 export async function setTheme(win: Page, id: string): Promise<void> {
   await goTo(win, 'Settings');
-  await win.locator(`input[name="theme"][value="${id}"]`).check();
+  await choose(win.locator(`input[name="theme"][value="${id}"]`));
   await win.waitForFunction((t) => document.documentElement.dataset.theme === t || t === 'system', id);
 }

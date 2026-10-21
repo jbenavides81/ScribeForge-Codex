@@ -5,7 +5,7 @@ import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { drawnText, findEverywhere, pageTexts, readerDetails } from '../unit/support/inspect';
-import { answerDialogs, blockedRequests, closeApp, dialogLog, fixtureHashes, goTo, launch, openFixture, passReview, waitForFirstPage, type Running } from './helpers';
+import { choose, answerDialogs, blockedRequests, closeApp, dialogLog, fixtureHashes, goTo, launch, openFixture, passReview, waitForFirstPage, type Running } from './helpers';
 
 let current: Running | null = null;
 test.afterEach(async () => {
@@ -171,7 +171,7 @@ test('Cancel in the before-save list saves nothing; Settings can turn the list o
   expect((await dialogLog(app)).filter((d) => d.kind === 'save')).toEqual([]);
 
   await goTo(win, 'Settings');
-  await win.getByLabel('Before saving, show what the new file carries').uncheck();
+  await choose(win.getByLabel('Before saving, show what the new file carries'), false);
   await goTo(win, 'Document');
   await win.getByRole('toolbar', { name: 'Annotate' }).getByRole('button', { name: 'Save as new file…' }).click();
   await expect(win.getByTestId('message')).toContainText('Saved quick.pdf (3 pages).');

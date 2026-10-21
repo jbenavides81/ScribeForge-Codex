@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { REDACTION_COLOURS } from '../../src/shared/annotationColours';
 import { contrastPairs, contrastRatio, cssVariables, PRESETS, presetFor, THEME_CHOICES } from '../../src/shared/themes';
 
 describe('contrast', () => {
@@ -20,6 +21,19 @@ describe('contrast', () => {
 
   it('checks every pairing on every preset (count)', () => {
     expect(contrastPairs().length * PRESETS.length).toBe(23 * 4);
+  });
+});
+
+describe('colours drawn on the page', () => {
+  // Pages are white whatever the theme, so outlines drawn on them are checked against white.
+  for (const preset of PRESETS) {
+    it(`${preset.name}: a selected annotation or mark's outline stands out on the page (3:1)`, () => {
+      expect(contrastRatio(preset.tokens.pageFocus, '#FFFFFF')).toBeGreaterThanOrEqual(3);
+      expect(contrastRatio(preset.tokens.outline, preset.tokens.pageBack)).toBeGreaterThanOrEqual(3);
+    });
+  }
+  it("a redaction mark's red edge stands out on the page (3:1)", () => {
+    expect(contrastRatio(REDACTION_COLOURS.outline, REDACTION_COLOURS.paper)).toBeGreaterThanOrEqual(3);
   });
 });
 

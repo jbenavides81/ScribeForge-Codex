@@ -24,6 +24,7 @@ export interface ThemeTokens {
   selection: string; // selected text background
   selectionText: string;
   pageBack: string; // behind the document's pages
+  pageFocus: string; // outlines drawn on a page (a selected annotation or mark), always on white
   scrim: string; // behind dialogs
 }
 
@@ -58,6 +59,7 @@ export const PRESETS: readonly ThemePreset[] = [
       selection: '#2F4B73',
       selectionText: '#FFFFFF',
       pageBack: '#0B0B0D',
+      pageFocus: '#1A4C8B',
       scrim: '#000000B3',
     },
   },
@@ -83,6 +85,7 @@ export const PRESETS: readonly ThemePreset[] = [
       selection: '#C9DAF2',
       selectionText: '#1C1D21',
       pageBack: '#DFE0E3',
+      pageFocus: '#1A4C8B',
       scrim: '#00000080',
     },
   },
@@ -108,6 +111,7 @@ export const PRESETS: readonly ThemePreset[] = [
       selection: '#33507A',
       selectionText: '#FFFFFF',
       pageBack: '#141517',
+      pageFocus: '#1A4C8B',
       scrim: '#000000B3',
     },
   },
@@ -133,6 +137,7 @@ export const PRESETS: readonly ThemePreset[] = [
       selection: '#FFD500',
       selectionText: '#000000',
       pageBack: '#000000',
+      pageFocus: '#000000',
       scrim: '#000000CC',
     },
   },

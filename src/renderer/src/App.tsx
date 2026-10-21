@@ -15,12 +15,13 @@ import { emptyRedact, markLabel, marksByPage, redactReducer, type RedactMark } f
 import { engineInput, type ConfirmRequest, type SourceDoc } from './pages/sources';
 import { About } from './screens/About';
 import { Details } from './screens/Details';
+import { Help, HELP_PAGES } from './screens/Help';
 import { Settings } from './screens/Settings';
 import { Start } from './screens/Start';
 import { DocumentView } from './viewer/DocumentView';
 import { loadDocument, OpenError, type PdfDocument } from './viewer/pdfjs';
 
-type Screen = 'start' | 'document' | 'pages' | 'details' | 'settings' | 'about';
+type Screen = 'start' | 'document' | 'pages' | 'details' | 'settings' | 'help' | 'about';
 
 interface OpenDocument {
   /** Each opened document gets a fresh viewer. */
@@ -95,6 +96,7 @@ export function App() {
   const [command, setCommand] = useState<{ name: MenuCommand; seq: number } | null>(null);
   const [annots, annotDispatch] = useReducer(annotReducer, emptyAnnots);
   const [docReport, setDocReport] = useState<DocReport | null>(null);
+  const [helpPage, setHelpPage] = useState(HELP_PAGES[0]?.file ?? '');
   const [detailsEdit, setDetailsEdit] = useState<Partial<DocInfo>>({});
   const [reviewing, setReviewing] = useState<(ReviewRequest & { resolve: (ok: boolean) => void }) | null>(null);
   const [redact, redactDispatch] = useReducer(redactReducer, emptyRedact);
@@ -284,6 +286,9 @@ export function App() {
         case 'show-about':
           setScreen('about');
           break;
+        case 'show-help':
+          setScreen('help');
+          break;
         case 'show-pages':
           if (docRef.current) setScreen('pages');
           break;
@@ -341,9 +346,9 @@ export function App() {
     review: (request) => new Promise<boolean>((resolve) => setReviewing({ ...request, resolve })),
     reviewMarks: () => new Promise<RedactMark[] | null>((resolve) => setReviewingMarks({ resolve })),
     onMessage: setMessage,
-    onSaved: (path) => void api.openPath(path).then(handleResult),
+    onSaved: async (path) => handleResult(await api.openPath(path)),
     // The marks are applied, so they don't count as unsaved; anything else still asks first.
-    onRedacted: (path) => void unlessUnsaved(async () => handleResult(await api.openPath(path)), { marksApplied: true }),
+    onRedacted: (path) => unlessUnsaved(async () => handleResult(await api.openPath(path)), { marksApplied: true }),
   });
   const saveAllRef = useRef(saving.saveAll);
   saveAllRef.current = saving.saveAll;
@@ -356,6 +361,7 @@ export function App() {
     { id: 'pages', label: 'Pages', icon: 'pages', disabled: !doc },
     { id: 'details', label: 'Details', icon: 'details', disabled: !doc },
     { id: 'settings', label: 'Settings', icon: 'settings' },
+    { id: 'help', label: 'Help', icon: 'help' },
     { id: 'about', label: 'About', icon: 'about' },
   ];
 
@@ -483,6 +489,7 @@ export function App() {
             }
           />
         )}
+        {screen === 'help' && <Help page={helpPage} onPage={setHelpPage} onWebLink={setLink} />}
         {screen === 'about' && <About version={info.version} trial={info.trial} />}
       </main>
 

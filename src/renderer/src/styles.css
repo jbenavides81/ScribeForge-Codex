@@ -411,7 +411,7 @@ input[type='checkbox']:checked::before {
 .sf-annot-text[data-selected='true'],
 .sf-annot:focus-visible .sf-annot-part,
 .sf-annot-note:focus-visible,
-.sf-annot-text:focus-visible { outline: 2px solid var(--sf-link); outline-offset: 1px; }
+.sf-annot-text:focus-visible { outline: 2px solid var(--sf-page-focus); outline-offset: 1px; }
 
 .sf-annot-panel {
   position: absolute;
@@ -448,7 +448,7 @@ input[type='checkbox']:checked::before {
 .sf-redact-interactive .sf-redact-part { pointer-events: auto; cursor: pointer; }
 .sf-redact-mark:focus-visible { outline: none; }
 .sf-redact-mark[data-selected='true'] .sf-redact-part,
-.sf-redact-mark:focus-visible .sf-redact-part { outline: 3px solid var(--sf-link); }
+.sf-redact-mark:focus-visible .sf-redact-part { outline: 3px solid var(--sf-page-focus); }
 .sf-redact-drag { outline: 2px dashed var(--sf-redact-outline); }
 
 .sf-marks-page h3 { margin: 0.75rem 0 0.25rem; font-size: 1rem; }
@@ -542,6 +542,21 @@ input[type='checkbox']:checked::before {
 }
 .sf-carries p { margin: 0.25rem 0 0; }
 .sf-carries-items { margin: 0.25rem 0 0; padding-left: 1.25rem; }
+
+/* ---------- help ---------- */
+
+.sf-help { flex: 1; min-height: 0; display: flex; }
+.sf-help-topics { flex: none; width: 15rem; padding: 1.5rem 0.75rem; overflow-y: auto; border-right: 1px solid var(--sf-line); background: var(--sf-panel); }
+.sf-help-topics ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 0.15rem; }
+.sf-help-topics .sf-nav-item { text-align: left; }
+.sf-help-page { line-height: 1.6; }
+.sf-help-page h2 { margin-top: 1.75rem; }
+.sf-help-page a { color: var(--sf-link); }
+.sf-help-page li + li { margin-top: 0.25rem; }
+.sf-help-page code { padding: 0.05rem 0.35rem; border: 1px solid var(--sf-line); border-radius: 4px; background: var(--sf-raised); font-family: inherit; }
+.sf-help-page table { border-collapse: collapse; margin: 0.75rem 0; }
+.sf-help-page th, .sf-help-page td { padding: 0.4rem 0.75rem; border: 1px solid var(--sf-line); text-align: left; vertical-align: top; }
+.sf-help-page th { font-weight: 600; background: var(--sf-panel); }
 
 /* ---------- dialogs ---------- */
 
