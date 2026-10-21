@@ -25,6 +25,9 @@
 | `Delete` | Delete the selected annotation or redaction mark |
 | `Escape` | Back to **Select** |
 | `Ctrl+Z`, `Ctrl+Y` | Undo, redo (annotations or redaction marks) |
+| `Ctrl+Shift+M` | Show or hide the comments |
+| Arrow keys | Move the selected note, text box, drawing, shape or stamp (`Shift`: further) |
+| `Alt` with an arrow key | Make the selected one larger or smaller |
 
 ## Pages screen
 

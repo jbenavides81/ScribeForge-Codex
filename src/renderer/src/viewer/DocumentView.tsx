@@ -1,16 +1,31 @@
 import './pdfjs';
-import { useCallback, useEffect, useRef, useState, type Dispatch } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch } from 'react';
 import { EventBus, PDFFindController, PDFLinkService, PDFViewer } from 'pdfjs-dist/web/pdf_viewer.mjs';
 import type { MenuCommand } from '../../../shared/api';
 import { isOpenableLink } from '../../../shared/links';
 import { DEFAULT_ANNOTATION_COLOUR } from '../../../shared/annotationColours';
-import { AnnotateToolbar, type Tool } from '../annotate/AnnotateToolbar';
-import { AnnotationLayer } from '../annotate/AnnotationLayer';
-import { AnnotationPanel } from '../annotate/AnnotationPanel';
-import { newAnnotId, TEXT_BOX_POINTS, type Annot, type AnnotAction, type AnnotState } from '../annotate/annotState';
-import { boxAt, selectionQuads, type Box } from '../annotate/geometry';
+import { AnnotateToolbar, type Tool, type ToolOptions } from '../annotate/AnnotateToolbar';
+import { AnnotationLayer, type Handle } from '../annotate/AnnotationLayer';
+import { AnnotationPanel, type PanelTarget } from '../annotate/AnnotationPanel';
+import {
+  annotPoints,
+  DEFAULT_LINE_WIDTH,
+  movable,
+  moved,
+  newAnnotId,
+  scaledPaths,
+  STAMPS,
+  TEXT_BOX_POINTS,
+  type Annot,
+  type AnnotAction,
+  type AnnotChanges,
+  type AnnotState,
+} from '../annotate/annotState';
+import { CommentsPanel, commentEntries } from '../annotate/CommentsPanel';
+import { asAnnot, hiddenFromViewer, needsRedraw, type FileAnnot } from '../annotate/fileAnnots';
+import { boxAt, boxToBounds, boxToQuad, pointsToBox, quadToBox, selectionQuads, type Box } from '../annotate/geometry';
 import { Icon } from '../components/Icon';
-import type { Rect } from '../../../engine/types';
+import type { Pt, Rect } from '../../../engine/types';
 import { findTerm, glyphsIn, lineBoxes, PADDING, pageGlyphs, pageMayContain, type Glyph } from '../redact/glyphs';
 import { MarkPanel } from '../redact/MarkPanel';
 import { RedactionLayer, type DragBox } from '../redact/RedactionLayer';
@@ -38,6 +53,14 @@ interface FindStatus {
   notFound: boolean;
 }
 
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/** Today, as a stamp shows it: "October 21, 2026". */
+const stampDate = () => new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+
+/** A stamp's size when placed, in points. */
+const STAMP_SIZE = { width: 160, height: 56 };
+
 export function DocumentView({
   pdf,
   name,
@@ -45,6 +68,9 @@ export function DocumentView({
   command,
   annots,
   annotDispatch,
+  fileAnnots,
+  fileLoading,
+  authorName,
   redact,
   redactDispatch,
   onRedact,
@@ -64,6 +90,12 @@ export function DocumentView({
   /** Annotations added in ScribeForge, not saved yet. */
   annots: AnnotState;
   annotDispatch: Dispatch<AnnotAction>;
+  /** The annotations already in the file, as pdf.js reads them. */
+  fileAnnots: FileAnnot[];
+  /** While they're still being read: "Reading comments, page n of m…". */
+  fileLoading: string | null;
+  /** The name put on new annotations (Settings). */
+  authorName: string;
   /** Redaction marks, not applied yet. */
   redact: RedactState;
   redactDispatch: Dispatch<RedactAction>;
@@ -91,6 +123,13 @@ export function DocumentView({
   const [colourId, setColourId] = useState(DEFAULT_ANNOTATION_COLOUR);
   const [layout, setLayout] = useState(0);
   const [justPlaced, setJustPlaced] = useState<string | null>(null);
+  const [options, setOptions] = useState<ToolOptions>({ shape: 'rect', width: DEFAULT_LINE_WIDTH, fill: false, fontSize: TEXT_BOX_POINTS, stamp: 'approved', stampText: '' });
+  const [commentsOpen, setCommentsOpen] = useState(false);
+  const [draft, setDraft] = useState<Annot | null>(null);
+  /** The drawing that new strokes join, until another tool is chosen. */
+  const inkTarget = useRef<string | null>(null);
+  const [focusReply, setFocusReply] = useState<string | null>(null);
+  const dragCount = useRef(0);
   const [mode, setMode] = useState<'annotate' | 'redact'>('annotate');
   const [redactTool, setRedactTool] = useState<RedactTool>('select');
   const [drag, setDrag] = useState<DragBox | null>(null);
@@ -161,6 +200,29 @@ export function DocumentView({
     };
   }, [pdf, relayout]);
 
+  // The file's own annotations that ScribeForge draws itself (changed ones), or not at all
+  // (deleted ones, and replies, which show in the panels): pdf.js leaves them out of the page
+  // drawing and of its own clickable layer. pdf.js does the same for annotations its editor
+  // changes, through the document's `modifiedIds`.
+  const hidden = useMemo(() => hiddenFromViewer(fileAnnots, annots.edits), [fileAnnots, annots.edits]);
+  const hiddenKey = [...hidden].sort().join(',');
+  const hiddenSet = useRef(new Set<string>());
+  useEffect(() => {
+    const ids = new Set(hiddenKey ? hiddenKey.split(',') : []);
+    const before = [...hiddenSet.current].sort().join(',');
+    hiddenSet.current = ids;
+    Object.defineProperty(pdf.annotationStorage, 'modifiedIds', { configurable: true, get: () => ({ ids, hash: hiddenKey }) });
+    const hideInLayer = () => {
+      for (const el of containerRef.current?.querySelectorAll<HTMLElement>('.annotationLayer [data-annotation-id]') ?? []) {
+        el.style.display = hiddenSet.current.has(el.dataset.annotationId ?? '') ? 'none' : '';
+      }
+    };
+    hideInLayer();
+    busRef.current?.on('annotationlayerrendered', hideInLayer);
+    if (before !== hiddenKey) viewerRef.current?.refresh();
+    return () => busRef.current?.off('annotationlayerrendered', hideInLayer);
+  }, [pdf, hiddenKey]);
+
   const goTo = useCallback(
     (n: number) => {
       const viewer = viewerRef.current;
@@ -230,9 +292,10 @@ export function DocumentView({
     return div && view?.viewport ? { div, index: n - 1, view } : null;
   };
 
-  const add = (annot: Omit<Annot, 'id' | 'colourId' | 'createdAt'>) => {
+  /** Adds an annotation in the chosen colour (unless it has its own), selecting it unless `select` is false. */
+  const add = (annot: Partial<Annot> & Pick<Annot, 'page' | 'kind' | 'text' | 'rotation'>, select = true) => {
     const id = newAnnotId();
-    annotDispatch({ type: 'add', annot: { ...annot, id, colourId, createdAt: new Date().toISOString() } });
+    annotDispatch({ type: 'add', annot: { colourId, ...annot, id, createdAt: new Date().toISOString() } as Annot, select });
     return id;
   };
 
@@ -358,22 +421,185 @@ export function DocumentView({
     selection.removeAllRanges();
   };
 
-  /** Note or text box: placed where the page is clicked. */
+  /** Note, text box or stamp: placed where the page is clicked. */
   const placeAt = (e: React.MouseEvent): boolean => {
-    if (redacting || (tool !== 'note' && tool !== 'text')) return false;
+    if (redacting || (tool !== 'note' && tool !== 'text' && tool !== 'stamp')) return false;
     const page = pageAt(e.target as Element);
     if (!page) return false;
     const origin = page.div.getBoundingClientRect();
     const x = e.clientX - origin.left;
     const y = e.clientY - origin.top;
     const vp = page.view.viewport;
-    const id =
-      tool === 'note'
-        ? add({ page: page.index, kind: 'note', box: boxAt(x, y, 24, 24, vp), text: '', rotation: page.view.pdfPage?.rotate ?? 0 })
-        : add({ page: page.index, kind: 'text', box: boxAt(x, y, 220, TEXT_BOX_POINTS * 1.2 * 2 + 8, vp), text: '', fontSize: TEXT_BOX_POINTS, rotation: page.view.pdfPage?.rotate ?? 0 });
+    const rotation = page.view.pdfPage?.rotate ?? 0;
+    let id: string;
+    if (tool === 'note') id = add({ page: page.index, kind: 'note', box: boxAt(x, y, 24, 24, vp), text: '', rotation });
+    else if (tool === 'text') {
+      id = add({ page: page.index, kind: 'text', box: boxAt(x, y, 220, options.fontSize * 1.2 * 2 + 8, vp), text: '', fontSize: options.fontSize, rotation });
+    } else {
+      const preset = STAMPS.find((s) => s.id === options.stamp);
+      const custom = options.stamp === 'custom';
+      id = add({
+        page: page.index,
+        kind: 'stamp',
+        box: boxAt(x, y, STAMP_SIZE.width, STAMP_SIZE.height, vp),
+        stamp: options.stamp,
+        label: custom ? options.stampText.trim() : preset?.label,
+        date: stampDate(),
+        text: '',
+        rotation,
+        ...(custom ? {} : { colourId: preset?.colourId }),
+      });
+    }
     setJustPlaced(id);
     setTool('select');
     return true;
+  };
+
+  /** Where the mouse is on a page, in the page's own space. */
+  const pdfPointAt = (page: NonNullable<ReturnType<typeof pageAt>>, clientX: number, clientY: number): Pt => {
+    const o = page.div.getBoundingClientRect();
+    const [x, y] = page.view.viewport.convertToPdfPoint(clientX - o.left, clientY - o.top);
+    return [round2(x), round2(y)];
+  };
+
+  /** Draw (freehand) and Shape: drag on the page. */
+  const startDrawing = (e: React.MouseEvent): boolean => {
+    if (redacting || e.button !== 0 || (tool !== 'ink' && tool !== 'shape')) return false;
+    const page = pageAt(e.target as Element);
+    if (!page) return false;
+    e.preventDefault();
+    window.getSelection()?.removeAllRanges();
+    const rotation = page.view.pdfPage?.rotate ?? 0;
+    const base = { id: 'draft', page: page.index, colourId, text: '', rotation, createdAt: '', width: options.width };
+    const start = pdfPointAt(page, e.clientX, e.clientY);
+    const startScreen = [e.clientX, e.clientY];
+    const points: Pt[] = [start];
+    const shape = options.shape;
+    let end = start;
+    let frame = 0;
+
+    const draftNow = (): Annot => {
+      if (tool === 'ink') return { ...base, kind: 'ink', paths: [points.slice()] };
+      if (shape === 'line' || shape === 'arrow') return { ...base, kind: shape, from: start, to: end };
+      const vp = page.view.viewport;
+      const box = pointsToBox([start, end], vp);
+      return { ...base, kind: shape, box: boxToQuad(box, vp), fill: options.fill };
+    };
+    const move = (ev: MouseEvent) => {
+      const p = pdfPointAt(page, ev.clientX, ev.clientY);
+      end = p;
+      const last = points[points.length - 1];
+      if (Math.hypot(p[0] - last[0], p[1] - last[1]) >= 0.75) points.push(p);
+      if (!frame) {
+        frame = requestAnimationFrame(() => {
+          frame = 0;
+          setDraft(draftNow());
+        });
+      }
+    };
+    const up = (ev: MouseEvent) => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+      if (frame) cancelAnimationFrame(frame);
+      setDraft(null);
+      end = pdfPointAt(page, ev.clientX, ev.clientY);
+      if (tool === 'ink') {
+        if (points.length === 1) points.push(start);
+        const target = annots.items.find((a) => a.id === inkTarget.current && a.page === page.index && a.kind === 'ink');
+        if (target) annotDispatch({ type: 'update', id: target.id, paths: [...(target.paths ?? []), points] });
+        else inkTarget.current = add({ ...base, kind: 'ink', paths: [points] }, false);
+        return;
+      }
+      // A click without a drag doesn't make a shape.
+      if (Math.hypot(ev.clientX - startScreen[0], ev.clientY - startScreen[1]) < 4) return;
+      const made = draftNow();
+      const { id: _id, createdAt: _c, ...rest } = made;
+      setJustPlaced(add(rest));
+      setTool('select');
+    };
+    setDraft(draftNow());
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+    return true;
+  };
+
+  /**
+   * The mouse went down on an annotation (or one of its handles) with Select: it's selected, and
+   * dragging moves it, or resizes it from the handle. One drag is one undo step.
+   */
+  const grab = (id: string, e: React.MouseEvent, handle?: Handle) => {
+    annotDispatch({ type: 'select', id });
+    const original = annots.items.find((a) => a.id === id);
+    const vp = original ? viewerRef.current?.getPageView(original.page)?.viewport : undefined;
+    if (!original || !movable(original) || !vp) return;
+    // No text selection while dragging. Typing in the panel is over: Ctrl+Z now undoes the drag.
+    e.preventDefault();
+    const typing = document.activeElement;
+    if (typing instanceof HTMLTextAreaElement || typing instanceof HTMLInputElement) typing.blur();
+    const [sx, sy] = [e.clientX, e.clientY];
+    const key = `drag-${++dragCount.current}`;
+    let dragging = false;
+    const startBox = original.box ? quadToBox(original.box, vp) : pointsToBox(annotPoints(original), vp);
+    const move = (ev: MouseEvent) => {
+      const dx = ev.clientX - sx;
+      const dy = ev.clientY - sy;
+      if (!dragging && Math.hypot(dx, dy) < 3) return;
+      dragging = true;
+      const [ox, oy] = vp.convertToPdfPoint(0, 0);
+      const [px, py] = vp.convertToPdfPoint(dx, dy);
+      let change: AnnotChanges;
+      if (!handle) change = moved(original, px - ox, py - oy);
+      else if (handle === 'from' || handle === 'to') {
+        const point = original[handle] as Pt;
+        change = { [handle]: [round2(point[0] + px - ox), round2(point[1] + py - oy)] };
+      } else {
+        const b: Box = { ...startBox };
+        if (handle.includes('w')) b.left = Math.min(startBox.right - 8, startBox.left + dx);
+        if (handle.includes('e')) b.right = Math.max(startBox.left + 8, startBox.right + dx);
+        if (handle.includes('n')) b.top = Math.min(startBox.bottom - 8, startBox.top + dy);
+        if (handle.includes('s')) b.bottom = Math.max(startBox.top + 8, startBox.bottom + dy);
+        change = original.box ? { box: boxToQuad(b, vp) } : { paths: scaledPaths(original.paths ?? [], boxToBounds(startBox, vp), boxToBounds(b, vp)) };
+      }
+      annotDispatch({ type: 'update', id, typing: key, ...change });
+    };
+    const up = () => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  };
+
+  /** Arrow keys move the selected annotation; with Alt they resize it. Shift moves further. */
+  const nudge = (key: string, shift: boolean, alt: boolean): boolean => {
+    const a = annots.items.find((x) => x.id === annots.selected);
+    const vp = a ? viewerRef.current?.getPageView(a.page)?.viewport : undefined;
+    if (!a || !movable(a) || !vp) return false;
+    const step = (shift ? 10 : 1) * vp.scale;
+    const [dx, dy] = key === 'ArrowLeft' ? [-step, 0] : key === 'ArrowRight' ? [step, 0] : key === 'ArrowUp' ? [0, -step] : [0, step];
+    const [ox, oy] = vp.convertToPdfPoint(0, 0);
+    const [px, py] = vp.convertToPdfPoint(dx, dy);
+    let change: AnnotChanges;
+    if (!alt) change = moved(a, px - ox, py - oy);
+    else if (a.from && a.to) change = { to: [round2(a.to[0] + px - ox), round2(a.to[1] + py - oy)] };
+    else {
+      const box = a.box ? quadToBox(a.box, vp) : pointsToBox(annotPoints(a), vp);
+      const b = { ...box, right: Math.max(box.left + 8, box.right + dx), bottom: Math.max(box.top + 8, box.bottom + dy) };
+      change = a.box ? { box: boxToQuad(b, vp) } : { paths: scaledPaths(a.paths ?? [], boxToBounds(box, vp), boxToBounds(b, vp)) };
+    }
+    annotDispatch({ type: 'update', id: a.id, typing: `keys-${a.id}`, ...change });
+    return true;
+  };
+
+  const nudgeRef = useRef(nudge);
+  nudgeRef.current = nudge;
+
+  /** Adds an empty reply under what's selected, and puts the cursor in it. */
+  const reply = (parent: string) => {
+    const page = parent.startsWith('file:') ? fileAnnots.find((f) => `file:${f.id}` === parent)?.page : annots.items.find((a) => a.id === parent)?.page;
+    if (page === undefined) return;
+    const id = add({ page, kind: 'reply', replyTo: parent, text: '', rotation: 0 }, false);
+    setFocusReply(id);
   };
 
   // Delete, Escape and undo/redo for annotations, while this screen is showing.
@@ -394,10 +620,14 @@ export function DocumentView({
         e.preventDefault();
         return;
       }
-      if (ctrl && e.key.toLowerCase() === 'z') annotDispatch({ type: 'undo' });
+      if (ctrl && e.shiftKey && e.key.toLowerCase() === 'm') setCommentsOpen((open) => !open);
+      else if (ctrl && e.key.toLowerCase() === 'z') annotDispatch({ type: 'undo' });
       else if (ctrl && e.key.toLowerCase() === 'y') annotDispatch({ type: 'redo' });
+      else if (e.key === 'Delete' && annots.selected?.startsWith('file:')) annotDispatch({ type: 'edit-file', ref: annots.selected.slice(5), deleted: true });
       else if (e.key === 'Delete' && annots.selected) annotDispatch({ type: 'remove', id: annots.selected });
-      else if (e.key === 'Escape' && (annots.selected || tool !== 'select')) {
+      else if (e.key.startsWith('Arrow') && !ctrl && annots.selected && nudgeRef.current(e.key, e.shiftKey, e.altKey)) {
+        // moved or resized
+      } else if (e.key === 'Escape' && (annots.selected || tool !== 'select')) {
         annotDispatch({ type: 'select', id: null });
         setTool('select');
       } else return;
@@ -429,8 +659,50 @@ export function DocumentView({
   };
 
   const zoomKnown = ZOOM_CHOICES.some((z) => z.value === zoom.value);
-  const selectedAnnot = redacting ? null : (annots.items.find((a) => a.id === annots.selected) ?? null);
   const selectedMark = redacting ? (redact.marks.find((m) => m.id === redact.selected) ?? null) : null;
+
+  // The file's own annotations: those that can be clicked, and those changed here (drawn by ScribeForge).
+  const shownFiles = fileAnnots.filter((f) => !f.inReplyTo && !f.hidden && !annots.edits[f.id]?.deleted);
+  const redrawn = shownFiles.flatMap((f) => (annots.edits[f.id] && needsRedraw(f, annots.edits[f.id]) ? (asAnnot(f, annots.edits[f.id]) ?? []) : []));
+
+  // What the panel shows: the selected annotation, with its replies (and replies to those).
+  let target: PanelTarget | null = null;
+  if (!redacting && annots.selected?.startsWith('file:')) {
+    const file = fileAnnots.find((f) => f.id === annots.selected?.slice(5));
+    if (file && !annots.edits[file.id]?.deleted) target = { kind: 'file', file, edit: annots.edits[file.id] ?? {} };
+  } else if (!redacting && annots.selected) {
+    const annot = annots.items.find((a) => a.id === annots.selected && a.kind !== 'reply');
+    if (annot) target = { kind: 'new', annot };
+  }
+  const threadOf = (key: string) => {
+    const fileThread: FileAnnot[] = [];
+    const addedThread: Annot[] = [];
+    const keys = [key];
+    for (let i = 0; i < keys.length; i++) {
+      const k = keys[i];
+      for (const f of fileAnnots) {
+        if (k.startsWith('file:') && f.inReplyTo === k.slice(5) && !annots.edits[f.id]?.deleted) {
+          fileThread.push(f);
+          keys.push(`file:${f.id}`);
+        }
+      }
+      for (const a of annots.items) {
+        if (a.kind === 'reply' && a.replyTo === k) {
+          addedThread.push(a);
+          keys.push(a.id);
+        }
+      }
+    }
+    return { fileThread, addedThread };
+  };
+  const thread = target ? threadOf(target.kind === 'new' ? target.annot.id : `file:${target.file.id}`) : null;
+  const entries = useMemo(() => commentEntries(annots.items, fileAnnots, annots.edits, authorName), [annots.items, fileAnnots, annots.edits, authorName]);
+  const openEntry = (key: string, page: number) => {
+    if (mode !== 'annotate') switchMode('annotate');
+    setTool('select');
+    goTo(page + 1);
+    annotDispatch({ type: 'select', id: key });
+  };
   const switchMode = (next: 'annotate' | 'redact') => {
     setMode(next);
     setTool('select');
@@ -559,14 +831,19 @@ export function DocumentView({
         tool={tool}
         onTool={(t) => {
           setTool(t);
+          inkTarget.current = null;
           if (t !== 'select') annotDispatch({ type: 'select', id: null });
         }}
         colourId={colourId}
         onColour={setColourId}
+        options={options}
+        onOptions={(change) => setOptions((o) => ({ ...o, ...change }))}
         canUndo={annots.past.length > 0}
         canRedo={annots.future.length > 0}
         onUndo={() => annotDispatch({ type: 'undo' })}
         onRedo={() => annotDispatch({ type: 'redo' })}
+        commentsOpen={commentsOpen}
+        onComments={() => setCommentsOpen((open) => !open)}
         onSave={onSave}
         working={working}
       />
@@ -576,10 +853,12 @@ export function DocumentView({
         <div className="sf-viewer-frame">
           <div
             ref={containerRef}
-            className={`sf-viewer-container${!redacting && (tool === 'note' || tool === 'text') ? ' sf-placing' : ''}${redacting && redactTool === 'area' ? ' sf-drawing' : ''}`}
+            className={`sf-viewer-container${!redacting && (tool === 'note' || tool === 'text' || tool === 'stamp') ? ' sf-placing' : ''}${(redacting && redactTool === 'area') || (!redacting && (tool === 'ink' || tool === 'shape')) ? ' sf-drawing' : ''}`}
             data-testid="viewer"
             data-tool={redacting ? `redact-${redactTool}` : tool}
-            onMouseDownCapture={startArea}
+            onMouseDownCapture={(e) => {
+              if (!startDrawing(e)) startArea(e);
+            }}
             onClickCapture={onClickCapture}
             onMouseUp={markSelection}
             onAuxClickCapture={onAuxClickCapture}
@@ -589,10 +868,14 @@ export function DocumentView({
               viewer={viewerRef.current}
               container={containerRef.current}
               annots={annots.items}
+              files={shownFiles}
+              redrawn={redrawn}
               selected={annots.selected}
               interactive={!redacting && tool === 'select'}
               layout={layout}
+              draft={draft}
               onSelect={(id) => annotDispatch({ type: 'select', id })}
+              onGrab={grab}
             />
             <RedactionLayer
               viewer={viewerRef.current}
@@ -605,9 +888,33 @@ export function DocumentView({
               onSelect={(id) => redactDispatch({ type: 'select', id })}
             />
           </div>
-          {selectedAnnot && <AnnotationPanel annot={selectedAnnot} dispatch={annotDispatch} focusText={justPlaced === selectedAnnot.id} />}
+          {target && thread && (
+            <AnnotationPanel
+              key={target.kind === 'new' ? target.annot.id : target.file.id}
+              target={target}
+              fileReplies={thread.fileThread}
+              addedReplies={thread.addedThread}
+              authorName={authorName}
+              flattenAll={annots.flattenAll}
+              dispatch={annotDispatch}
+              focusText={target.kind === 'new' && justPlaced === target.annot.id}
+              focusReply={focusReply}
+              onReply={reply}
+            />
+          )}
           {selectedMark && <MarkPanel mark={selectedMark} marks={redact.marks} dispatch={redactDispatch} />}
         </div>
+        {commentsOpen && (
+          <CommentsPanel
+            entries={entries}
+            loading={fileLoading}
+            selected={annots.selected}
+            flattenAll={annots.flattenAll}
+            onOpen={(entry) => openEntry(entry.key, entry.page)}
+            onFlattenAll={(on) => annotDispatch({ type: 'flatten-all', on })}
+            onClose={() => setCommentsOpen(false)}
+          />
+        )}
       </div>
     </div>
   );

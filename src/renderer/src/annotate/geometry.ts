@@ -1,7 +1,7 @@
 // Screen ↔ PDF geometry for annotations. A pdf.js page viewport converts between a point on the
 // shown page (pixels from its top-left) and a point in the PDF page's own space.
 import { MARK_LINE_AT, markLineWidth } from '../../../engine/marks';
-import type { Quad } from '../../../engine/types';
+import type { Pt, Quad } from '../../../engine/types';
 
 export interface Box {
   left: number;
@@ -123,4 +123,19 @@ export function quadToBox(quad: Quad, viewport: Viewport): Box {
 /** A box `width` × `height` PDF points whose top-left is at (x, y) on the shown page. */
 export function boxAt(x: number, y: number, width: number, height: number, viewport: Viewport): Quad {
   return boxToQuad({ left: x, top: y, right: x + width * viewport.scale, bottom: y + height * viewport.scale }, viewport);
+}
+
+/** PDF points → the box they cover on the shown page (pixels). */
+export function pointsToBox(points: Pt[], viewport: Viewport): Box {
+  const shown = points.map(([x, y]) => viewport.convertToViewportPoint(x, y));
+  const xs = shown.map((p) => p[0]);
+  const ys = shown.map((p) => p[1]);
+  return { left: Math.min(...xs), top: Math.min(...ys), right: Math.max(...xs), bottom: Math.max(...ys) };
+}
+
+/** A box on the shown page (pixels) → its bounds in PDF space, as [x0, y0, x1, y1]. */
+export function boxToBounds(box: Box, viewport: Viewport): number[] {
+  const a = viewport.convertToPdfPoint(box.left, box.top);
+  const b = viewport.convertToPdfPoint(box.right, box.bottom);
+  return [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[0], b[0]), Math.max(a[1], b[1])];
 }

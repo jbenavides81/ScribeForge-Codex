@@ -14,8 +14,10 @@
 //    the two always agree and nothing old from either is carried over.
 // 6. Redacting: marked pages are replaced by images of themselves with the marks blacked out,
 //    and the new file keeps only pages and the links between them (Phase 0 plan, section 9).
-import { degrees, PDFArray, PDFDict, PDFDocument, PDFObjectCopier, PDFPage, PDFString, type PDFFont, type PDFObject } from '@cantoo/pdf-lib';
-import { addAnnotations } from './annotate';
+import { degrees, PDFArray, PDFDict, PDFDocument, PDFObjectCopier, PDFPage, PDFString, type PDFObject, type PDFRef } from '@cantoo/pdf-lib';
+import { addAnnotations, type Fonts } from './annotate';
+import { applyFileChanges, collectMarked } from './fileAnnots';
+import { flattenPage } from './flatten';
 import { countOutline, documentActions, readInfo, readXmpFrom } from './inspect';
 import { copyLayers } from './layers';
 import { cutStrayPageReferences, destinationTarget, N, nameOf, nameTreeEntries, openSource, sweepUnreachable } from './objects';
@@ -55,6 +57,11 @@ function readPlaceholder(obj: PDFObject | undefined): { source: string; index: n
 function prepareSourcePages(doc: PDFDocument, sourceId: string, indices: number[], report: BuildReport, redacting: boolean): void {
   const pages = doc.getPages();
   const pageIndexByRef = new Map(pages.map((p, i) => [p.ref.toString(), i]));
+  // Every annotation on a page being copied: a reply can keep pointing at one of these (on its
+  // own page or another), since the same copier brings both over. Pointing anywhere else, it's
+  // just a comment, so copying it can't drag in a page that isn't in the new file.
+  const copiedAnnots = new Set<string>();
+  for (const index of indices) for (const raw of pages[index].node.lookupMaybe(N('Annots'), PDFArray)?.asArray() ?? []) copiedAnnots.add(String(raw));
   for (const index of indices) {
     const node = pages[index].node;
     node.delete(N('AA')); // page open/close actions
@@ -66,8 +73,6 @@ function prepareSourcePages(doc: PDFDocument, sourceId: string, indices: number[
     }
     const annots = node.lookupMaybe(N('Annots'), PDFArray);
     if (!annots) continue;
-    const ownAnnots = new Set<string>();
-    for (let k = 0; k < annots.size(); k++) ownAnnots.add(String(annots.get(k)));
     const keep: PDFObject[] = [];
     for (let k = 0; k < annots.size(); k++) {
       const raw = annots.get(k);
@@ -83,7 +88,7 @@ function prepareSourcePages(doc: PDFDocument, sourceId: string, indices: number[
       }
       annot.delete(N('P'));
       annot.delete(N('AA'));
-      if (annot.has(N('IRT')) && !ownAnnots.has(String(annot.get(N('IRT'))))) annot.delete(N('IRT'));
+      if (annot.has(N('IRT')) && !copiedAnnots.has(String(annot.get(N('IRT'))))) annot.delete(N('IRT'));
       if (subtype === 'Widget' && annot.has(N('Parent'))) {
         annot.delete(N('Parent'));
         report.formFieldsDetached++;
@@ -246,6 +251,11 @@ export async function buildPdf(
     report.attachmentsLeftOut += nameTreeEntries(doc, names?.lookupMaybe(N('EmbeddedFiles'), PDFDict)).length;
     const copied = (needed.get(id) as number[]).filter((index) => !redacted(id, index));
     prepareSourcePages(doc, id, copied, report, redacting);
+    if (!redacting) {
+      // Changes to the file's own annotations, made on this loaded copy before its pages are copied.
+      const replyTargets = new Set(annotations.flatMap((a) => (a.kind === 'reply' && a.source === id && a.replyTo.startsWith('file:') ? [a.replyTo.slice(5)] : [])));
+      await applyFileChanges(doc, id, options.fileChanges ?? [], replyTargets, report);
+    }
     docs.set(id, doc);
   }
 
@@ -300,18 +310,30 @@ export async function buildPdf(
 
   for (const page of placedPages) resolvePlaceholders(out, page, where, report);
 
+  // Where the file's own annotations that new replies answer ended up.
+  const inFile = new Map<string, PDFRef>();
+  for (const page of placedPages) collectMarked(out, page.node.lookupMaybe(N('Annots'), PDFArray), inFile);
+
   // Annotations added in ScribeForge follow their page; those whose page isn't here are left out.
-  const byPage = new Map<string, AnnotationInput[]>();
-  for (const a of annotations) {
-    const key = `${a.source}:${a.index}`;
-    byPage.set(key, [...(byPage.get(key) ?? []), a]);
+  // Replies go last, so what they answer is already in place.
+  const fonts: Fonts = {};
+  const added = new Map<string, PDFRef>();
+  for (const pass of [annotations.filter((a) => a.kind !== 'reply'), annotations.filter((a) => a.kind === 'reply')]) {
+    const byPage = new Map<string, AnnotationInput[]>();
+    for (const a of pass) {
+      const key = `${a.source}:${a.index}`;
+      byPage.set(key, [...(byPage.get(key) ?? []), a]);
+    }
+    for (const [key, list] of byPage) {
+      const page = redacting ? undefined : where.get(key);
+      const count = page ? await addAnnotations(out, page, list, fonts, added, inFile) : 0;
+      report.annotationsAdded += count;
+      report.annotationsLeftOut += list.length - count;
+    }
   }
-  const fonts: { helvetica?: PDFFont } = {};
-  for (const [key, list] of byPage) {
-    const page = redacting ? undefined : where.get(key);
-    if (page) report.annotationsAdded += await addAnnotations(out, page, list, fonts);
-    else report.annotationsLeftOut += list.length;
-  }
+
+  // Burning annotations into their pages, once all of them are in place.
+  if (!redacting) for (const page of new Set(placedPages)) flattenPage(out, page, options.flattenAll ?? false, report);
 
   // Bookmarks: one source keeps its own; merged files each get a bookmark named after the file.
   // A redacted file has none.

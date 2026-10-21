@@ -34,6 +34,9 @@ export type Quad = [number, number, number, number, number, number, number, numb
 /** A PDF colour: red, green, blue from 0 to 1. */
 export type RGB = [number, number, number];
 
+/** A point in PDF page space. */
+export type Pt = [number, number];
+
 interface AnnotationCommon {
   /** Unique; saved in the PDF as the annotation's name (scribeforge-…). */
   id: string;
@@ -43,7 +46,15 @@ interface AnnotationCommon {
   author?: string;
   /** ISO date and time. */
   createdAt: string;
+  /**
+   * Burned into the page when saving (Phase 2 plan, F5): it keeps its look but is no longer an
+   * annotation, so it can't be changed or removed.
+   */
+  flatten?: boolean;
 }
+
+/** The stamps ScribeForge offers. Custom has the person's own text. */
+export type StampKind = 'approved' | 'draft' | 'confidential' | 'reviewed' | 'not-approved' | 'custom';
 
 /** An annotation added in ScribeForge, saved as a standard PDF annotation. */
 export type AnnotationInput =
@@ -58,7 +69,54 @@ export type AnnotationInput =
       fontSize: number;
       /** The page's own rotation, so the text is saved upright as shown. */
       rotation: Rotation;
-    });
+    })
+  /** Freehand drawing: one or more strokes, each a list of points. */
+  | (AnnotationCommon & { kind: 'ink'; paths: Pt[][]; colour: RGB; width: number; comment?: string })
+  /** Rectangle or ellipse filling the box, with an optional fill colour. */
+  | (AnnotationCommon & { kind: 'rect' | 'ellipse'; box: Quad; colour: RGB; fill?: RGB; width: number; comment?: string })
+  /** A straight line; an arrow has its head at `to`. */
+  | (AnnotationCommon & { kind: 'line' | 'arrow'; from: Pt; to: Pt; colour: RGB; width: number; comment?: string })
+  | (AnnotationCommon & {
+      kind: 'stamp';
+      stamp: StampKind;
+      /** What the stamp says, such as "Approved", and the date under it. */
+      label: string;
+      date: string;
+      box: Quad;
+      colour: RGB;
+      rotation: Rotation;
+      comment?: string;
+    })
+  /**
+   * A reply to another annotation: one added in ScribeForge (its id) or one already in the file
+   * ("file:" and pdf.js's id for it, such as "file:12R"). Saved as a comment that points to it.
+   */
+  | (AnnotationCommon & { kind: 'reply'; replyTo: string; comment: string });
+
+/**
+ * A change to an annotation that was already in a source file, found by pdf.js's id for it
+ * (its object number, such as "12R"). Whatever isn't changed (author, dates, other replies)
+ * stays as it was.
+ */
+export interface FileAnnotationChange {
+  source: string;
+  /** The page it's on. */
+  index: number;
+  ref: string;
+  /** Removed from the new file, with its pop-up and any replies to it. */
+  deleted?: boolean;
+  /** A new comment. */
+  comment?: string;
+  /** Drawn again with a new colour or text: the same annotation as ScribeForge would save it. */
+  redraw?: AnnotationInput;
+  flatten?: boolean;
+}
+
+/** Turns pdf.js's id for an annotation ("12R", or "12R3" for generation 3) into its object reference. */
+export function parseAnnotationRef(id: string): { num: number; gen: number } | null {
+  const m = /^(\d+)R(\d*)$/.exec(id);
+  return m ? { num: Number(m[1]), gen: m[2] ? Number(m[2]) : 0 } : null;
+}
 
 /** What happened to the parts of the pages that point elsewhere. Shown to the person after saving. */
 export interface BuildReport {
@@ -82,6 +140,12 @@ export interface BuildReport {
   annotationsAdded: number;
   /** Annotations on pages that aren't in the new file. */
   annotationsLeftOut: number;
+  /** Annotations already in the file: changed, and deleted. */
+  annotationsChanged: number;
+  annotationsDeleted: number;
+  /** Annotations burned into the pages, and those that couldn't be (they have no look of their own). */
+  annotationsFlattened: number;
+  annotationsNotFlattened: number;
   /** Files attached to a whole document (not to a page), which aren't copied into new files. */
   attachmentsLeftOut: number;
   /** Redaction: pages made into images. */
@@ -105,6 +169,10 @@ export function emptyReport(): BuildReport {
     objectsSwept: 0,
     annotationsAdded: 0,
     annotationsLeftOut: 0,
+    annotationsChanged: 0,
+    annotationsDeleted: 0,
+    annotationsFlattened: 0,
+    annotationsNotFlattened: 0,
     attachmentsLeftOut: 0,
     pagesRedacted: 0,
     commentsLeftOut: 0,
@@ -139,6 +207,10 @@ export interface BuildOptions {
   redact?: Record<string, RedactedPage>;
   /** Terms that must be found nowhere in the new file; any that are come back in `found`. */
   verifyTerms?: string[];
+  /** Changes to annotations that were already in the source files. */
+  fileChanges?: FileAnnotationChange[];
+  /** Burn every comment-type annotation into its page (not links or form fields). */
+  flattenAll?: boolean;
 }
 
 /** One of a file's own details, as stored in the classic details and in XMP. */

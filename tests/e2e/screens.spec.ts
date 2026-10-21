@@ -10,9 +10,10 @@ import { choose, closeApp, goTo, launch, openFixture, SCREENS, setTheme, waitFor
 const SCREEN_NAMES = ['Start', 'Document', 'Pages', 'Details', 'Settings', 'Help', 'About'] as const;
 /**
  * Each theme's row also shows the list of what a new file carries before saving, the Document
- * screen in Redact mode with a mark selected, and the list of marks before redacting.
+ * screen in Redact mode with a mark selected, the list of marks before redacting, and the
+ * comments panel with a stamp selected.
  */
-const COLUMNS = SCREEN_NAMES.length + 3;
+const COLUMNS = SCREEN_NAMES.length + 4;
 
 test('screenshots of every screen in every theme', async ({}, info) => {
   test.setTimeout(300_000);
@@ -48,6 +49,30 @@ test('screenshots of every screen in every theme', async ({}, info) => {
   await place('Note', 0.55, 0.12, 'A note');
   await annotate.getByRole('radio', { name: 'Red', exact: true }).click();
   await place('Text box', 0.12, 0.3, 'Approved by the team');
+  // A drawing, a filled rectangle, an arrow and a stamp.
+  const dragOn = async (from: [number, number], to: [number, number]) => {
+    const box = (await page1.boundingBox())!;
+    await win.mouse.move(box.x + box.width * from[0], box.y + box.height * from[1]);
+    await win.mouse.down();
+    await win.mouse.move(box.x + box.width * to[0], box.y + box.height * to[1], { steps: 6 });
+    await win.mouse.up();
+  };
+  await annotate.getByRole('radio', { name: 'Green' }).click();
+  await annotate.getByRole('button', { name: 'Draw', exact: true }).click();
+  await dragOn([0.62, 0.3], [0.8, 0.34]);
+  await annotate.getByRole('radio', { name: 'Orange' }).click();
+  await annotate.getByRole('button', { name: 'Shape', exact: true }).click();
+  await annotate.getByLabel('Fill').check();
+  await dragOn([0.62, 0.37], [0.78, 0.43]);
+  await win.getByTestId('annot-panel').getByRole('button', { name: 'Done' }).click();
+  await annotate.getByRole('button', { name: 'Shape', exact: true }).click();
+  await annotate.getByLabel('Shape', { exact: true }).selectOption('arrow');
+  await dragOn([0.3, 0.44], [0.52, 0.38]);
+  await win.getByTestId('annot-panel').getByRole('button', { name: 'Done' }).click();
+  await annotate.getByRole('button', { name: 'Stamp', exact: true }).click();
+  const stampAt = (await page1.boundingBox())!;
+  await win.mouse.click(stampAt.x + stampAt.width * 0.62, stampAt.y + stampAt.height * 0.02);
+  await win.getByTestId('annot-panel').getByRole('button', { name: 'Done' }).click();
   // Redaction marks: a search, and an area.
   const tools = win.getByRole('radiogroup', { name: 'Tools' });
   const redactBar = win.getByRole('toolbar', { name: 'Redact' });
@@ -113,6 +138,14 @@ test('screenshots of every screen in every theme', async ({}, info) => {
     row.push(marksFile);
     await win.getByTestId('marks-dialog').getByRole('button', { name: 'Cancel' }).click();
     await tools.getByRole('radio', { name: 'Annotate' }).click();
+    await annotate.getByRole('button', { name: 'Select', exact: true }).click();
+    await annotate.getByRole('button', { name: 'Comments' }).click();
+    await win.locator('.sf-annot-stamp').click();
+    await win.waitForTimeout(300);
+    const commentsFile = path.join(SCREENS, `${theme.id}-comments.png`);
+    await win.screenshot({ path: commentsFile });
+    row.push(commentsFile);
+    await annotate.getByRole('button', { name: 'Comments' }).click();
     await selectHighlight();
     shots.push(row);
   }
@@ -132,8 +165,8 @@ test('screenshots of every screen in every theme', async ({}, info) => {
   }
   await closeApp(app);
 
-  // Contact sheet: one row per theme (Start, Document, Pages, Details, Settings, About, the
-  // before-save list, Redact mode and the marks list), then text sizes.
+  // Contact sheet: one row per theme (Start, Document, Pages, Details, Settings, Help, About, the
+  // before-save list, Redact mode, the marks list and the comments panel), then text sizes.
   const scale = 0.3;
   const w = Math.round(1280 * scale);
   const h = Math.round(800 * scale);

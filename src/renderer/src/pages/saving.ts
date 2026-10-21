@@ -8,6 +8,7 @@ import { outputName } from '../../../engine/names';
 import { emptyReport, type AnnotationInput, type BuildReport, type Carries, type DocInfo, type PageItem, type RedactedPage } from '../../../engine/types';
 import type { RedactionDpi } from '../../../shared/settings';
 import { toEngineInput, type AnnotState } from '../annotate/annotState';
+import { fileChanges, type FileAnnot } from '../annotate/fileAnnots';
 import { combineCarries } from '../details/describe';
 import { burnPage } from '../redact/burn';
 import { completeTerms, type RedactMark } from '../redact/redactState';
@@ -42,6 +43,7 @@ export function useSaving({
   sources,
   edit,
   annots,
+  fileAnnots,
   authorName,
   details,
   producer,
@@ -57,6 +59,8 @@ export function useSaving({
   sources: SourceDoc[];
   edit: EditState;
   annots: AnnotState;
+  /** The annotations already in the open file, for saving changes to them. */
+  fileAnnots: FileAnnot[];
   authorName: string;
   /** The new file's title, author, subject and keywords, once the open file's are known. */
   details: DocInfo | undefined;
@@ -81,7 +85,13 @@ export function useSaving({
 
   const usedSources = (items: PageItem[]) => sources.filter((s) => items.some((i) => i.kind === 'page' && i.source === s.id));
 
-  const build = (items: PageItem[]) => buildDocument(usedSources(items).map(engineInput), items, annotations(), { details, producer });
+  const build = (items: PageItem[]) =>
+    buildDocument(usedSources(items).map(engineInput), items, annotations(), {
+      details,
+      producer,
+      fileChanges: primary ? fileChanges(fileAnnots, annots.edits, primary.id, annots.flattenAll) : [],
+      flattenAll: annots.flattenAll,
+    });
 
   /**
    * Asks first when any page comes from a locked file: one that needs a password to open, or
@@ -151,7 +161,7 @@ export function useSaving({
     if (!primary) return Promise.resolve();
     const merged = usedSources(edit.tiles.map((t) => t.item)).length > 1;
     return save(edit.tiles, outputName(primary.name, merged ? 'merged' : 'edited'), true);
-  }, [primary, edit, annots, authorName, sources, details, producer, reviewBeforeSave]);
+  }, [primary, edit, annots, fileAnnots, authorName, sources, details, producer, reviewBeforeSave]);
 
   const saveSelected = (tiles: Tile[]) => {
     const positions = tiles.map((t) => edit.tiles.indexOf(t) + 1);

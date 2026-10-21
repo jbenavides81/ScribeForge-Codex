@@ -4,10 +4,10 @@ An open-source, offline PDF toolkit for Windows: view, organise, annotate, inspe
 
 ScribeForge never sends anything over the network, and it never changes the files you open: edits save to new files.
 
-**Status:** Phase 2 has started. Version 1.1.0. You can:
+**Status:** Phase 2 is under way. Version 1.2.0. You can:
 - open, view, search and copy from PDFs;
 - on the Pages screen, merge, split, reorder, rotate, delete, extract and insert blank pages;
-- on the Document screen, highlight, underline and strike out text, and add notes and text boxes;
+- on the Document screen, highlight, underline and strike out text; add notes, text boxes, drawings, shapes (rectangles, ellipses, lines and arrows) and stamps; move and resize them; see every annotation in the comments panel; reply to comments; change or delete annotations already in the file; and burn annotations into the page;
 - on the Details screen, see and change a file's title, author, subject and keywords, and see everything else it carries: attached files, form fields, comments, scripts, bookmarks, hidden layers and links;
 - on the Document screen in Redact mode, mark areas, selected text, or every match of a search, check the marks, and save a redacted copy;
 - from Command Prompt or PowerShell, merge, split, rotate, extract, show details and redact without opening the window (see [Command line](#command-line)).
@@ -31,7 +31,7 @@ Everything saves to a new file. Before saving, ScribeForge shows what the new fi
    ```bash
    npm run dist
    ```
-   It's saved as `release\ScribeForge Setup 1.1.0.exe`.
+   It's saved as `release\ScribeForge Setup 1.2.0.exe`.
 2. Run it. The installer isn't signed, so Windows shows "Windows protected your PC" the first time: click **More info**, then **Run anyway**.
 3. Choose **Only for me** and where to install it (your user folder by default; no administrator rights needed). ScribeForge is then in the Start menu.
 
@@ -138,7 +138,9 @@ npm run trial:reset
     - Links and bookmarks point at the right pages of the new file, or are left out if their page isn't there.
     - Scripts and other actions in the pages are removed.
     - Saving over the original asks a second, plain question first.
-- **Annotations are standard PDF annotations,** so Edge, Acrobat and other readers show them. They're only added to the new file when you save. Your name goes on them only if you type it in Settings.
+- **Annotations are standard PDF annotations,** each with its own look, so Edge, Acrobat and other readers show the same thing. They're only added to the new file when you save. Your name goes on them only if you type it in Settings. Replies point at the comment they answer, as other readers expect.
+- **Annotations already in a file are changed in place, in the new file only.** A changed one keeps its author, date and replies; a deleted one is left out of the new file completely, with its replies, not just hidden.
+- **Burning in is real.** A burned-in annotation is drawn into the page exactly where it was (as the PDF standard describes) and the annotation itself is removed, so it can't be changed or removed. Tests check the page looks the same.
 - **No hidden surprises.** Before every save, a list shows what the new file carries besides its pages. Scripts and files attached to the whole document are never copied into new files.
 - **A file's details are kept in two places** (the classic details and a copy in XMP format). New files always get both, matching, so old values can't linger in either.
 - **Hidden layers stay hidden** in new files, and the list says they're there, because what's on them is still in the file.

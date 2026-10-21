@@ -150,7 +150,7 @@ test('highlight, note and text box, saved as a new file that other readers show'
   await tool(win, 'Text box').click();
   await clickPage(win, 1, 0.3, 0.6);
   await expect(panel(win)).toContainText('Text box on page 1');
-  await panel(win).getByLabel('Text').fill('Approved by the team');
+  await panel(win).getByLabel('Text', { exact: true }).fill('Approved by the team');
   await panel(win).getByRole('button', { name: 'Done' }).click();
   await expect(win.locator('.sf-annot-text')).toHaveText('Approved by the team');
   await expect(win.locator('.sf-annot')).toHaveCount(3);

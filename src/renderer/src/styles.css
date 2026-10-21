@@ -426,8 +426,105 @@ input[type='checkbox']:checked::before {
   color: var(--sf-text);
 }
 .sf-annot-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-bottom: 0.5rem; }
-.sf-annot-panel h2 { margin: 0; font-size: 1rem; }
+.sf-annot-panel h2, .sf-comments h2 { margin: 0; font-size: 1rem; }
 .sf-annot-panel .sf-dialog-buttons { margin-top: 0.75rem; }
+.sf-annot-panel { max-height: calc(100% - 1.5rem); overflow-y: auto; }
+.sf-annot-panel .sf-choice { margin: 0.25rem 0; }
+.sf-field-row { flex-direction: row; align-items: center; justify-content: space-between; }
+
+/* Options for the chosen tool, beside the colours. */
+.sf-tool-option { display: inline-flex; align-items: center; gap: 0.4rem; }
+.sf-tool-option input[type='text'] { width: 10rem; }
+
+/* Drawings, shapes, lines and stamps added in ScribeForge. */
+.sf-annot-svg, .sf-annot-stamp { position: absolute; overflow: visible; }
+.sf-annot-svg { pointer-events: none; }
+.sf-annot-interactive .sf-annot-svg .sf-annot-hit { pointer-events: all; cursor: move; }
+.sf-annot-interactive .sf-annot-stamp { pointer-events: auto; cursor: move; }
+.sf-annot-interactive .sf-annot-note, .sf-annot-interactive .sf-annot-text { cursor: move; }
+.sf-annot-stamp {
+  border-style: solid;
+  border-color: var(--sf-annot-ink);
+  color: var(--sf-annot-ink);
+  font-family: Arial, 'Helvetica', sans-serif;
+  font-feature-settings: normal;
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.sf-annot-stamp-label, .sf-annot-stamp-date { position: absolute; left: 0; right: 0; text-align: center; line-height: 1; }
+.sf-annot-stamp-label { font-weight: 600; }
+.sf-annot-svg[data-selected='true'], .sf-annot-stamp[data-selected='true'],
+.sf-annot-svg:focus-visible, .sf-annot-stamp:focus-visible { outline: 2px solid var(--sf-page-focus); outline-offset: 1px; }
+.sf-annot-svg[data-draft], .sf-annot-svg[data-draft] * { pointer-events: none; }
+
+/* The file's own annotations: click areas over what pdf.js draws. */
+.sf-annot-file { position: absolute; }
+.sf-annot-interactive .sf-annot-file { pointer-events: auto; cursor: pointer; }
+.sf-annot-file[data-selected='true'], .sf-annot-file:focus-visible { outline: 2px solid var(--sf-page-focus); outline-offset: 1px; }
+
+/* Corners (or ends) of the selected annotation, to drag. */
+.sf-annot-handle {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  border: 2px solid var(--sf-page-focus);
+  border-radius: 2px;
+  background: var(--sf-page-back);
+  pointer-events: auto;
+}
+.sf-annot-handle[data-handle='nw'], .sf-annot-handle[data-handle='se'] { cursor: nwse-resize; }
+.sf-annot-handle[data-handle='ne'], .sf-annot-handle[data-handle='sw'] { cursor: nesw-resize; }
+.sf-annot-handle[data-handle='from'], .sf-annot-handle[data-handle='to'] { cursor: crosshair; }
+
+/* Drawing and shapes: dragging on the page draws, rather than selecting text. */
+.sf-drawing .page, .sf-drawing .textLayer, .sf-drawing .textLayer span { cursor: crosshair; user-select: none; }
+
+/* Replies under a comment. */
+.sf-replies h3 { margin: 0.75rem 0 0.25rem; font-size: 1rem; }
+.sf-replies ul { margin: 0 0 0.5rem; padding: 0; list-style: none; }
+.sf-reply { padding: 0.35rem 0; border-top: 1px solid var(--sf-line); overflow-wrap: anywhere; }
+.sf-reply p { margin: 0.15rem 0; }
+.sf-reply .sf-field { margin: 0.25rem 0; }
+
+/* Every annotation, old and new, beside the pages. */
+.sf-comments {
+  flex: none;
+  width: 21rem;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0.75rem 1rem;
+  border-left: 1px solid var(--sf-line);
+  background: var(--sf-panel);
+}
+.sf-comments-filters { display: flex; gap: 0.75rem; }
+.sf-comments-filters .sf-field { flex: 1; margin: 0.25rem 0; }
+.sf-comments-filters select { width: 100%; }
+.sf-comments-list { flex: 1; min-height: 0; overflow-y: auto; }
+.sf-comments-list h3 { margin: 0.75rem 0 0.25rem; font-size: 1rem; }
+.sf-comments-list ul { margin: 0; padding: 0; list-style: none; }
+.sf-comment {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  width: 100%;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid transparent;
+  border-top-color: var(--sf-line);
+  background: transparent;
+  color: var(--sf-text);
+  text-align: left;
+  cursor: pointer;
+}
+.sf-comment:hover { background: var(--sf-raised); }
+.sf-comment[aria-current='true'] { border-color: var(--sf-link); background: var(--sf-raised); }
+.sf-comment-head { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.sf-comment-text { overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.sf-comments-burn { margin-top: 0.75rem; }
+.sf-comments-burn-hint { margin: 0; }
 
 /* ---------- redacting ---------- */
 
@@ -594,3 +691,16 @@ input[type='checkbox']:checked::before {
   overflow-wrap: anywhere;
   font-variant-numeric: tabular-nums;
 }
+
+/* A button that reads as a link, for small actions inside a panel. */
+.sf-link-button { padding: 0; border: 0; background: none; color: var(--sf-link); text-decoration: underline; cursor: pointer; }
+
+/*
+ * pdf.js numbers each of the file's own links and comments upwards (z-index 1, 2, 3…); kept as one
+ * layer here, above the text but below ScribeForge's annotation and redaction layers, so a busy
+ * page's links can't cover ScribeForge's marks and handles.
+ */
+.sf-viewer-container .annotationLayer { z-index: 1; }
+
+/* The tool's hint wraps in its own space, so Save stays on the same row. */
+.sf-annotate-bar .sf-hint { flex: 1 1 14rem; min-width: 0; text-align: right; }

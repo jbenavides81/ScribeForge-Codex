@@ -3,6 +3,7 @@ import type { AppInfo, MenuCommand, OpenedFile, OpenResult, RecentFile, Settings
 import type { Settings as AppSettings } from '../../shared/settings';
 import { DOC_INFO_FIELDS, type DocInfo, type FileReport } from '../../engine/types';
 import { annotReducer, emptyAnnots, hasAnnotChanges } from './annotate/annotState';
+import { fileAnnotsOf, type FileAnnot, type PdfAnnotationData } from './annotate/fileAnnots';
 import { applyAppearance, onSystemThemeChange } from './appearance';
 import { Dialog } from './components/Dialog';
 import { CarriesList } from './details/CarriesList';
@@ -95,6 +96,7 @@ export function App() {
   const [link, setLink] = useState<string | null>(null);
   const [command, setCommand] = useState<{ name: MenuCommand; seq: number } | null>(null);
   const [annots, annotDispatch] = useReducer(annotReducer, emptyAnnots);
+  const [fileAnnots, setFileAnnots] = useState<{ docId: number; list: FileAnnot[]; reading: string | null } | null>(null);
   const [docReport, setDocReport] = useState<DocReport | null>(null);
   const [helpPage, setHelpPage] = useState(HELP_PAGES[0]?.file ?? '');
   const [detailsEdit, setDetailsEdit] = useState<Partial<DocInfo>>({});
@@ -333,10 +335,34 @@ export function App() {
     [doc, added],
   );
 
+  // The annotations already in the open file, read once in the background, page by page.
+  useEffect(() => {
+    if (!doc) return;
+    let stopped = false;
+    void (async () => {
+      const list: FileAnnot[] = [];
+      const total = doc.pdf.numPages;
+      for (let n = 1; n <= total && !stopped; n++) {
+        try {
+          const page = await doc.pdf.getPage(n);
+          list.push(...fileAnnotsOf(n - 1, page.rotate, (await page.getAnnotations()) as PdfAnnotationData[]));
+        } catch {
+          // A damaged page: its annotations can't be listed.
+        }
+        if (!stopped && (n % 25 === 0 || n === total)) setFileAnnots({ docId: doc.id, list: [...list], reading: n === total ? null : `Reading comments, page ${n} of ${total}…` });
+      }
+    })();
+    return () => {
+      stopped = true;
+    };
+  }, [doc]);
+  const docFileAnnots = fileAnnots && doc && fileAnnots.docId === doc.id ? fileAnnots : null;
+
   const saving = useSaving({
     sources,
     edit,
     annots,
+    fileAnnots: docFileAnnots?.list ?? [],
     authorName: settings?.authorName ?? '',
     details: detailValues,
     producer: info ? `ScribeForge ${info.version}` : 'ScribeForge',
@@ -438,6 +464,9 @@ export function App() {
               command={command}
               annots={annots}
               annotDispatch={annotDispatch}
+              fileAnnots={docFileAnnots?.list ?? []}
+              fileLoading={docFileAnnots ? docFileAnnots.reading : 'Reading comments…'}
+              authorName={settings?.authorName ?? ''}
               redact={redact}
               redactDispatch={redactDispatch}
               onRedact={() => void saving.redact()}

@@ -36,7 +36,15 @@ export type IconName =
   | 'redact'
   | 'redact-area'
   | 'redact-text'
-  | 'help';
+  | 'help'
+  | 'draw'
+  | 'rect'
+  | 'ellipse'
+  | 'line'
+  | 'arrow'
+  | 'stamp'
+  | 'comments'
+  | 'reply';
 
 export const PATHS: Record<IconName, string[]> = {
   logo: [
@@ -80,5 +88,13 @@ export const PATHS: Record<IconName, string[]> = {
   redact: ['M16 6 H38 L50 18 V58 H16 Z', 'M38 6 V18 H50', 'M22 28 H44 V34 H22 Z', 'M22 42 H38 V48 H22 Z'],
   'redact-area': ['M8 14 H56 V50 H8 Z', 'M18 24 H46 V40 H18 Z', 'M22 28 L42 36', 'M22 36 L42 28'],
   'redact-text': ['M8 22 H56', 'M8 42 H56', 'M14 26 H50 V38 H14 Z'],
+  draw: ['M8 46 C 14 30 22 26 26 36 C 30 46 38 44 42 30 C 44 22 50 20 56 24', 'M8 56 H30'],
+  rect: ['M10 14 H54 V50 H10 Z'],
+  ellipse: ['M32 14 a22 18 0 1 0 0.01 0 Z'],
+  line: ['M10 52 L54 12'],
+  arrow: ['M10 52 L54 12', 'M34 12 H54 V32'],
+  stamp: ['M24 8 H40 V28 L46 34 H18 L24 28 Z', 'M10 34 H54 V44 H10 Z', 'M14 54 H50'],
+  comments: ['M6 8 H40 V32 H20 L10 42 V32 H6 Z', 'M46 20 H58 V44 H54 V54 L44 44 H26 V38'],
+  reply: ['M28 14 L10 30 L28 46', 'M10 30 H38 C 50 30 56 38 56 52'],
   help: ['M32 6 a26 26 0 1 0 0.01 0 Z', 'M24 25 a8 8 0 1 1 11 7.4 C 33 33.5 32 35 32 38 V40', 'M32 47 V48'],
 };

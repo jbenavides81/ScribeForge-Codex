@@ -17,6 +17,10 @@ export function buildNotes(report: BuildReport): string[] {
       `${plural(report.linksRemoved, 'link')} and ${plural(report.bookmarksRemoved, 'bookmark')} pointed to pages that aren't in the new file, so they were left out.`,
     );
   }
+  if (report.annotationsNotFlattened > 0) {
+    const n = report.annotationsNotFlattened;
+    lines.push(`${plural(n, 'annotation')} couldn't be burned into the page, because ${n === 1 ? 'it has' : 'they have'} no look of ${n === 1 ? 'its' : 'their'} own; ${n === 1 ? "it's" : "they're"} kept as ${n === 1 ? 'an annotation' : 'annotations'}.`);
+  }
   if (report.formFieldsDetached > 0) lines.push("Form fields look the same but can't be filled in, in the new file.");
   if (report.actionsRemoved > 0) lines.push('Scripts and other actions were removed.');
   if (report.attachmentsLeftOut > 0) {
@@ -30,6 +34,9 @@ export function buildNotes(report: BuildReport): string[] {
 export function savedMessage(path: string, report: BuildReport): string {
   const lines = [`Saved ${fileNameOf(path)} (${plural(report.pages, 'page')}).`];
   if (report.annotationsAdded > 0) lines.push(`${plural(report.annotationsAdded, 'annotation')} saved with the pages.`);
+  if (report.annotationsChanged > 0) lines.push(`${plural(report.annotationsChanged, 'annotation')} already in the file ${report.annotationsChanged === 1 ? 'was' : 'were'} changed.`);
+  if (report.annotationsDeleted > 0) lines.push(`${plural(report.annotationsDeleted, 'annotation')} ${report.annotationsDeleted === 1 ? 'was' : 'were'} deleted.`);
+  if (report.annotationsFlattened > 0) lines.push(`${plural(report.annotationsFlattened, 'annotation')} ${report.annotationsFlattened === 1 ? 'was' : 'were'} burned into the pages.`);
   return [...lines, ...buildNotes(report)].join('\n');
 }
 
