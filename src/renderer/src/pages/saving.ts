@@ -5,7 +5,7 @@
 // Redacting also saves a new file, built the same way from the pages as arranged.
 import { useCallback, useRef, useState } from 'react';
 import { outputName } from '../../../engine/names';
-import { emptyReport, type AnnotationInput, type BuildReport, type Carries, type DocInfo, type PageItem, type RedactedPage } from '../../../engine/types';
+import { emptyReport, type AnnotationInput, type BuildReport, type Carries, type CleanOptions, type DocInfo, type PageItem, type RedactedPage, type RedactKeep } from '../../../engine/types';
 import type { RedactionDpi } from '../../../shared/settings';
 import { toEngineInput, type AnnotState } from '../annotate/annotState';
 import { fileChanges, type FileAnnot } from '../annotate/fileAnnots';
@@ -16,7 +16,7 @@ import { completeTerms, type RedactMark } from '../redact/redactState';
 import { browserSurface } from '../redact/surface';
 import { pdfjsLib } from '../viewer/pdfjs';
 import { plural } from '../words';
-import { buildNotes, redactedMessage, redactionNotes, savedMessage } from './report';
+import { buildNotes, cleanedMessage, cleanNotes, redactedMessage, redactionNotes, savedMessage } from './report';
 import { buildDocument, inspectDocument } from './engineClient';
 import type { EditState, Tile } from './editState';
 import { engineInput, type ConfirmRequest, type SourceDoc } from './sources';
@@ -73,7 +73,7 @@ export function useSaving({
   confirm: (request: ConfirmRequest) => Promise<boolean>;
   review: (request: ReviewRequest) => Promise<boolean>;
   /** Shows the redaction marks for checking. The marks left when the person goes on, or null. */
-  reviewMarks: () => Promise<{ marks: RedactMark[]; log: boolean } | null>;
+  reviewMarks: () => Promise<{ marks: RedactMark[]; log: boolean; keep: RedactKeep } | null>;
   onMessage: (text: string) => void;
   /** Opens the saved file; the message about saving is shown once it's open. */
   onSaved: (path: string) => Promise<void>;
@@ -88,10 +88,11 @@ export function useSaving({
 
   const usedSources = (items: PageItem[]) => sources.filter((s) => items.some((i) => i.kind === 'page' && i.source === s.id));
 
-  const build = (items: PageItem[]) =>
+  const build = (items: PageItem[], clean?: CleanOptions) =>
     buildDocument(usedSources(items).map(engineInput), items, annotations(), {
       details,
       producer,
+      clean,
       fileChanges: primary ? fileChanges(fileAnnots, annots.edits, primary.id, annots.flattenAll) : [],
       flattenAll: annots.flattenAll,
     });
@@ -133,13 +134,13 @@ export function useSaving({
   };
 
   /** Shows what the new files carry, when Settings says so. True to go on and save. */
-  const reviewed = async (made: { name: string; bytes: Uint8Array }[], report: BuildReport): Promise<boolean> => {
+  const reviewed = async (made: { name: string; bytes: Uint8Array }[], report: BuildReport, notes = buildNotes(report), title?: string): Promise<boolean> => {
     if (!reviewBeforeSave) return true;
     setWorking('Checking what the new file carries…');
     const carries: Carries[] = [];
     for (const file of made) carries.push((await inspectDocument({ id: file.name, name: file.name, bytes: file.bytes })).carries);
     setWorking(null);
-    return review({ carries: combineCarries(carries), files: made.length, notes: buildNotes(report) });
+    return review({ carries: combineCarries(carries), files: made.length, notes, title });
   };
 
   const save = (tiles: Tile[], name: string, openAfter: boolean) =>
@@ -200,7 +201,7 @@ export function useSaving({
     run(async () => {
       const reviewedMarks = await reviewMarks();
       if (!reviewedMarks || reviewedMarks.marks.length === 0) return;
-      const { marks, log } = reviewedMarks;
+      const { marks, log, keep } = reviewedMarks;
       const items = edit.tiles.map((t) => t.item);
       if (items.length === 0 || !(await lockCheck(items))) return;
       const kept = new Set(items.flatMap((i) => (i.kind === 'page' && i.source === primary.id ? [i.index] : [])));
@@ -217,7 +218,7 @@ export function useSaving({
       }
       setWorking('Making the redacted file…');
       const terms = completeTerms(marks);
-      const { bytes, report, found } = await buildDocument(usedSources(items).map(engineInput), items, [], { redact: pages, producer, verifyTerms: terms });
+      const { bytes, report, found } = await buildDocument(usedSources(items).map(engineInput), items, [], { redact: pages, producer, verifyTerms: terms, keep });
       if (found.length > 0) {
         setWorking(null);
         const ok = await confirm({
@@ -233,7 +234,7 @@ export function useSaving({
       const { carries } = await inspectDocument({ id: name, name, bytes });
       setWorking(null);
       const lowest = Math.min(...Object.values(pages).map((p) => p.dpi));
-      if (!(await review({ carries, files: 1, notes: redactionNotes(report, used, marks.length - used, lowest), title: 'What the redacted file carries' }))) return;
+      if (!(await review({ carries, files: 1, notes: redactionNotes(report, used, marks.length - used, lowest, keep), title: 'What the redacted file carries' }))) return;
       setWorking('Saving…');
       const result = await api.saveFile({ bytes, suggestedName: name, sourcePaths: sources.map((s) => s.path) });
       if (result.ok) {
@@ -251,6 +252,7 @@ export function useSaving({
             marksLeftOut: marks.length - used,
             checked: terms.length,
             found: found.length,
+            kept: keep,
           });
           const savedLog = await api.saveBeside({ pdfPath: result.path, suffix: 'redaction log', text });
           logged = savedLog.ok ? `\nRedaction log saved as ${fileName(savedLog.path)}.` : `\nThe redaction log couldn't be saved. ${savedLog.message ?? ''}`.trimEnd();
@@ -262,5 +264,26 @@ export function useSaving({
       } else if (result.reason === 'failed') onMessage(result.message ?? "ScribeForge couldn't save the file.");
     });
 
-  return { working, saveAll, saveSelected, split, redact };
+  /**
+   * Clean up: a new file, like any save, but without what was chosen on the Clean up screen. The
+   * person sees what it carries and what was removed, then chooses where to save it.
+   */
+  const clean = (choices: CleanOptions) =>
+    run(async () => {
+      const items = edit.tiles.map((t) => t.item);
+      if (items.length === 0 || !(await lockCheck(items))) return;
+      setWorking('Making the cleaned file…');
+      const { bytes, report } = await build(items, choices);
+      const name = outputName(primary.name, 'cleaned');
+      if (!(await reviewed([{ name, bytes }], report, [...cleanNotes(report), ...buildNotes(report)], 'What the cleaned file carries'))) return;
+      setWorking('Saving…');
+      const result = await api.saveFile({ bytes, suggestedName: name, sourcePaths: sources.map((s) => s.path) });
+      if (result.ok) {
+        setWorking('Opening the new file…');
+        await onSaved(result.path);
+        onMessage(cleanedMessage(result.path, report));
+      } else if (result.reason === 'failed') onMessage(result.message ?? "ScribeForge couldn't save the file.");
+    });
+
+  return { working, saveAll, saveSelected, split, redact, clean };
 }

@@ -18,7 +18,7 @@ import {
   type PDFOperator,
   type PDFPage,
 } from '@cantoo/pdf-lib';
-import { FLATTEN_MARK, noteAppearance } from './annotate';
+import { appearanceFor, FLATTEN_MARK, noteAppearance } from './annotate';
 import { N, nameOf } from './objects';
 import type { BuildReport, RGB } from './types';
 
@@ -83,10 +83,11 @@ export function placementMatrix(rect: number[], bbox: number[], matrix: number[]
 }
 
 /**
- * Burns in the page's annotations that are marked for it, or every comment-type annotation when
- * `all` is set. Annotations with no look of their own are left as they are and counted.
+ * Burns in the page's annotations that are marked for it, and every one of the `kinds` given (such
+ * as COMMENT_KINDS, or "Widget" for form fields). Annotations with no look of their own are left as
+ * they are and counted.
  */
-export function flattenPage(doc: PDFDocument, page: PDFPage, all: boolean, report: BuildReport): void {
+export function flattenPage(doc: PDFDocument, page: PDFPage, kinds: Set<string>, report: BuildReport): void {
   const annots = page.node.lookupMaybe(N('Annots'), PDFArray);
   if (!annots) return;
   const entries = annots.asArray().map((raw) => ({ raw, dict: doc.context.lookup(raw) }));
@@ -98,7 +99,7 @@ export function flattenPage(doc: PDFDocument, page: PDFPage, all: boolean, repor
     const subtype = nameOf(dict.get(N('Subtype'))) ?? '';
     const marked = dict.get(N(FLATTEN_MARK)) !== undefined;
     dict.delete(N(FLATTEN_MARK));
-    if (!(marked || (all && COMMENT_KINDS.has(subtype)))) continue;
+    if (!(marked || kinds.has(subtype))) continue;
     // A reply has no look of its own: it goes with the annotation it answers.
     if (dict.has(N('IRT')) && !marked) continue;
 
@@ -107,7 +108,8 @@ export function flattenPage(doc: PDFDocument, page: PDFPage, all: boolean, repor
     if (flags & (HIDDEN | NO_VIEW) || !rect) {
       // Not shown, so nothing to draw: it just goes.
       remove.add(raw);
-      report.annotationsFlattened++;
+      if (subtype === 'Widget') report.formFieldsFlattened++;
+      else report.annotationsFlattened++;
       continue;
     }
     if (subtype === 'Text' && !dict.has(N('AP'))) {
@@ -115,6 +117,10 @@ export function flattenPage(doc: PDFDocument, page: PDFPage, all: boolean, repor
       const colour = numbers(dict.get(N('C')));
       const icon = noteAppearance(doc, rect, colour?.length === 3 ? (colour as RGB) : [1, 0.894, 0.361]);
       dict.set(N('AP'), doc.context.obj({ N: icon }));
+    } else if (!dict.has(N('AP'))) {
+      // Readers draw some kinds themselves; ScribeForge draws these the way it saves them.
+      const look = appearanceFor(doc, page, dict);
+      if (look) dict.set(N('AP'), look);
     }
     const form = normalAppearance(doc, dict);
     const stream = form ? doc.context.lookup(form, PDFStream) : undefined;
@@ -125,9 +131,12 @@ export function flattenPage(doc: PDFDocument, page: PDFPage, all: boolean, repor
     }
     const matrix = numbers(stream.dict.get(N('Matrix'))) ?? [1, 0, 0, 1, 0, 0];
     const name = page.node.newXObject('SFAnnot', form);
-    ops.push(pushGraphicsState(), concatTransformationMatrix(...(placementMatrix(rect, bbox, matrix) as [number, number, number, number, number, number])), drawObject(name), popGraphicsState());
+    // Its rectangle as it is now: a look drawn here comes with its own.
+    const placed = numbers(dict.get(N('Rect'))) ?? rect;
+    ops.push(pushGraphicsState(), concatTransformationMatrix(...(placementMatrix(placed, bbox, matrix) as [number, number, number, number, number, number])), drawObject(name), popGraphicsState());
     remove.add(raw);
-    report.annotationsFlattened++;
+    if (subtype === 'Widget') report.formFieldsFlattened++;
+    else report.annotationsFlattened++;
   }
   if (remove.size === 0) return;
 

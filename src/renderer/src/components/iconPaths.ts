@@ -44,7 +44,8 @@ export type IconName =
   | 'arrow'
   | 'stamp'
   | 'comments'
-  | 'reply';
+  | 'reply'
+  | 'clean';
 
 export const PATHS: Record<IconName, string[]> = {
   logo: [
@@ -96,5 +97,6 @@ export const PATHS: Record<IconName, string[]> = {
   stamp: ['M24 8 H40 V28 L46 34 H18 L24 28 Z', 'M10 34 H54 V44 H10 Z', 'M14 54 H50'],
   comments: ['M6 8 H40 V32 H20 L10 42 V32 H6 Z', 'M46 20 H58 V44 H54 V54 L44 44 H26 V38'],
   reply: ['M28 14 L10 30 L28 46', 'M10 30 H38 C 50 30 56 38 56 52'],
+  clean: ['M46 6 L32 30', 'M22 30 H40 L48 58 H14 Z', 'M24 44 L22 58', 'M31 44 V58', 'M38 44 L40 58'],
   help: ['M32 6 a26 26 0 1 0 0.01 0 Z', 'M24 25 a8 8 0 1 1 11 7.4 C 33 33.5 32 35 32 38 V40', 'M32 47 V48'],
 };

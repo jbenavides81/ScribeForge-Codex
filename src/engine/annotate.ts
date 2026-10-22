@@ -21,6 +21,7 @@ import {
   PDFDocument,
   PDFHexString,
   PDFName,
+  PDFNumber,
   PDFString,
   popGraphicsState,
   pushGraphicsState,
@@ -36,6 +37,7 @@ import {
   StandardFonts,
   stroke,
   type PDFFont,
+  type PDFObject,
   type PDFOperator,
   type PDFPage,
   type PDFRef,
@@ -402,6 +404,53 @@ function reply(doc: PDFDocument, page: PDFPage, a: Extract<AnnotationInput, { ki
   dict.set(N('Name'), N('Comment'));
   dict.set(N('Open'), doc.context.obj(false));
   return dict;
+}
+
+/**
+ * A look for an annotation that has none of its own (readers draw these themselves), made the way
+ * ScribeForge draws the same kind, so it can be burned into the page. Highlights, underlines,
+ * strikeouts, drawings, rectangles, ellipses and lines; undefined for anything else.
+ */
+export function appearanceFor(doc: PDFDocument, page: PDFPage, dict: PDFDict): PDFObject | undefined {
+  const nums = (key: string) => {
+    const arr = dict.lookupMaybe(N(key), PDFArray);
+    return arr?.asArray().map((n) => (n instanceof PDFNumber ? n.asNumber() : 0));
+  };
+  const subtype = dict.lookupMaybe(N('Subtype'), PDFName)?.decodeText();
+  const c = nums('C');
+  const colour: RGB = c?.length === 3 ? (c as RGB) : subtype === 'Highlight' ? [1, 0.894, 0.361] : [0, 0, 0];
+  const bs = dict.lookupMaybe(N('BS'), PDFDict)?.lookupMaybe(N('W'), PDFNumber)?.asNumber() ?? 1;
+  const base = { id: 'flatten', source: '', index: 0, createdAt: '' };
+  let fresh: PDFDict | undefined;
+  if (subtype === 'Highlight' || subtype === 'Underline' || subtype === 'StrikeOut') {
+    const points = nums('QuadPoints') ?? [];
+    const quads = Array.from({ length: Math.floor(points.length / 8) }, (_, i) => points.slice(i * 8, i * 8 + 8) as Quad);
+    if (quads.length > 0) fresh = markup(doc, page, { ...base, kind: subtype === 'Highlight' ? 'highlight' : subtype === 'Underline' ? 'underline' : 'strikeout', quads, colour });
+  } else if (subtype === 'Ink') {
+    const lists = dict.lookupMaybe(N('InkList'), PDFArray)?.asArray() ?? [];
+    const paths = lists.map((l) => {
+      const arr = doc.context.lookup(l);
+      const v = arr instanceof PDFArray ? arr.asArray().map((n) => (n instanceof PDFNumber ? n.asNumber() : 0)) : [];
+      return Array.from({ length: Math.floor(v.length / 2) }, (_, i) => [v[i * 2], v[i * 2 + 1]] as Pt);
+    });
+    if (paths.some((p) => p.length > 0)) fresh = ink(doc, page, { ...base, kind: 'ink', paths, colour, width: bs });
+  } else if (subtype === 'Square' || subtype === 'Circle') {
+    const r = nums('Rect');
+    const ic = nums('IC');
+    if (r?.length === 4) {
+      const box: Quad = [r[0], r[3], r[2], r[3], r[0], r[1], r[2], r[1]];
+      fresh = shape(doc, page, { ...base, kind: subtype === 'Square' ? 'rect' : 'ellipse', box, colour, width: bs, fill: ic?.length === 3 ? (ic as RGB) : undefined });
+    }
+  } else if (subtype === 'Line') {
+    const l = nums('L');
+    const ends = dict.lookupMaybe(N('LE'), PDFArray)?.asArray().map((e) => (e instanceof PDFName ? e.decodeText() : 'None')) ?? [];
+    if (l?.length === 4) fresh = line(doc, page, { ...base, kind: ends[1] && ends[1] !== 'None' ? 'arrow' : 'line', from: [l[0], l[1]], to: [l[2], l[3]], colour, width: bs });
+  }
+  if (!fresh) return undefined;
+  // The look is drawn for the rectangle it was made for.
+  const rect = fresh.get(N('Rect'));
+  if (rect) dict.set(N('Rect'), rect);
+  return fresh.get(N('AP'));
 }
 
 /**

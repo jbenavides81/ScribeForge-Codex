@@ -298,9 +298,11 @@ export function readCarries(doc: PDFDocument, details: FileDetails): Carries {
   const web = new Set<string>();
   const links = { webLinks: 0, pages: 0, otherFiles: 0 };
   const pages = doc.getPages();
+  let pageData = 0;
   for (let p = 0; p < pages.length && p < MAX_PAGES_WALKED; p++) {
     const page = p + 1;
     const node = pages[p].node;
+    if (node.has(N('PieceInfo')) || node.has(N('Metadata')) || node.has(N('Thumb'))) pageData++;
     finder.addAll(node.get(N('AA')), (event) => ({ where: 'page', page, event: event === 'C' ? 'close' : 'open' }));
     const annots = node.lookupMaybe(N('Annots'), PDFArray);
     for (let k = 0; k < (annots?.size() ?? 0); k++) {
@@ -367,6 +369,7 @@ export function readCarries(doc: PDFDocument, details: FileDetails): Carries {
     actions: finder.found,
     bookmarks: countOutline(readOutline(doc)),
     layers,
+    pageData,
     links: { web: [...web], ...links },
     encrypted: details.encrypted,
   };

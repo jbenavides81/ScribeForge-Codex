@@ -46,6 +46,8 @@ It never contains the text that was removed, only a hint such as `j•••@e�
 
 Only the pages, and the links between them. It leaves out the document's details (title, author and so on), comments, form fields, bookmarks, attached files, scripts and any annotations you added.
 
+In the **Redact N marks?** window you can choose to keep some of them: the document's details, the bookmarks, and the comments, form fields and attached files on pages without marks. Marked pages never keep any of them, and scripts are never kept. Whatever you keep is searched by the last check too.
+
 Pages without marks are copied exactly as they are. Their text can still be selected and searched.
 
 ## A last check

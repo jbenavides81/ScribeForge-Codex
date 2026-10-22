@@ -2,7 +2,8 @@
 // the person asks for one. It lists when, which files, the settings, and each mark's page, kind
 // and pattern. It never contains the removed text, only a masked hint, because a log that
 // repeated the secret would undo the redaction.
-import type { BuildReport } from '../../../engine/types';
+import type { BuildReport, RedactKeep } from '../../../engine/types';
+import { keptList, redactionLeftOut } from '../pages/report';
 import { formatDate } from '../details/describe';
 import { plural } from '../words';
 import { maskHint, PATTERNS } from './patterns';
@@ -24,6 +25,8 @@ export interface LogInput {
   /** How many marked values the last check searched for, and how many it still found. */
   checked: number;
   found: number;
+  /** What the person chose to keep. */
+  kept?: RedactKeep;
 }
 
 /** What a mark is, for the log: its kind, and a hint that doesn't give its text away. */
@@ -44,7 +47,7 @@ export function logLine(mark: RedactMark): string {
 
 export function redactionLog(input: LogInput): string {
   const { report } = input;
-  const left: string[] = ["the document's details (title, author and so on)"];
+  const left: string[] = [];
   if (report.commentsLeftOut > 0) left.push(plural(report.commentsLeftOut, 'comment'));
   if (report.formFieldsLeftOut > 0) left.push(plural(report.formFieldsLeftOut, 'form field'));
   if (report.bookmarksLeftOut > 0) left.push(plural(report.bookmarksLeftOut, 'bookmark'));
@@ -58,8 +61,10 @@ export function redactionLog(input: LogInput): string {
     `Redacted file: ${input.saved}`,
     `Made from: ${input.source}`,
     `Pages: ${plural(report.pages, 'page')}, ${plural(report.pagesRedacted, 'page')} redacted. Each redacted page was made into a picture (${input.dpi} dpi) with the marks blacked out, so none of its text is left.`,
-    `Left out, as in every redacted file: ${left.join(', ')}.`,
+    `${redactionLeftOut(left, input.kept)}.`,
   ];
+  const kept = keptList(input.kept ?? {});
+  if (kept.length > 0) lines.push(`Kept, as chosen: ${kept.join(', ')}.`);
   if (input.marksLeftOut > 0) lines.push(`${plural(input.marksLeftOut, 'mark')} ${input.marksLeftOut === 1 ? 'was' : 'were'} on pages that aren't in the redacted file.`);
   lines.push(
     input.checked === 0

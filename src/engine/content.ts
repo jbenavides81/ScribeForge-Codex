@@ -1,7 +1,7 @@
-// RESEARCH PROTOTYPE (stop 2c), not part of the app: reads a page's drawing instructions (a PDF
-// content stream) into operators and their operands, and writes them back. Handles numbers,
-// strings (literal and hex), names, arrays, dictionaries and inline images (ISO 32000-1, 7.8 and
-// 8.9.7). See docs/Research_TextRemoval.md.
+// A page's drawing instructions (a PDF content stream), read into operators and their operands,
+// and written back. Handles numbers, strings (literal and hex), names, arrays, dictionaries and
+// pictures stored in the page itself (ISO 32000-1, sections 7.8 and 8.9.7). Used to take what's on
+// hidden layers out of pages, and by the text-removal research (docs/Research_TextRemoval.md).
 
 export type Value =
   | { kind: 'num'; value: number; raw: string }

@@ -59,6 +59,7 @@ describe('several new files', () => {
     actions: [],
     bookmarks: 0,
     layers: [],
+    pageData: 0,
     links: { web: [], webLinks: 0, pages: 0, otherFiles: 0 },
     encrypted: false,
     ...over,

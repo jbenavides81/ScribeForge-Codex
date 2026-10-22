@@ -21,7 +21,10 @@ Which program made the file, when it was created and last changed, its PDF versi
 - **Scripts and actions** that could run code, open a program or send data. ScribeForge never runs them.
 - **Bookmarks**.
 - **Layers**, including hidden ones. What's on a hidden layer is still in the file, and anyone can show it.
+- **Hidden page data**: data other programs keep with a page, out of sight, and small pictures of pages.
 - **Links**: web and email addresses, and links to pages.
 - Whether the file has a **password or restrictions**.
 
 Before every save, ScribeForge shows the same list for the new file, so nothing goes out by surprise. You can turn that off in **Settings**.
+
+To make a copy without some of these, use [Clean up](13-cleaning-up.md).

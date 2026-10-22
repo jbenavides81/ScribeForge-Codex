@@ -49,6 +49,7 @@ export function infoText(name: string, report: FileReport): string[] {
     c.links.pages > 0 ? plural(c.links.pages, 'link to a page', 'links to pages') : '',
     c.links.otherFiles > 0 ? plural(c.links.otherFiles, 'link to another file', 'links to other files') : '',
   ].filter(Boolean);
+  lines.push(`  Hidden page data: ${c.pageData > 0 ? `on ${plural(c.pageData, 'page')}` : 'none'}`);
   lines.push(`  Links: ${links.length > 0 ? links.join(', ') : 'none'}`);
   for (const w of c.links.web) lines.push(`    ${w}`);
   return lines;

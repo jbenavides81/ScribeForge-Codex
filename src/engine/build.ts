@@ -17,7 +17,8 @@
 import { degrees, PDFArray, PDFDict, PDFDocument, PDFObjectCopier, PDFPage, PDFString, type PDFObject, type PDFRef } from '@cantoo/pdf-lib';
 import { addAnnotations, type Fonts } from './annotate';
 import { applyFileChanges, collectMarked } from './fileAnnots';
-import { flattenPage } from './flatten';
+import { COMMENT_KINDS, flattenPage } from './flatten';
+import { hiddenLayers, removeHiddenContent } from './hiddenLayers';
 import { countOutline, documentActions, readInfo, readXmpFrom } from './inspect';
 import { copyLayers } from './layers';
 import { cutStrayPageReferences, destinationTarget, N, nameOf, nameTreeEntries, openSource, sweepUnreachable } from './objects';
@@ -54,7 +55,8 @@ function readPlaceholder(obj: PDFObject | undefined): { source: string; index: n
 }
 
 /** Rule 2 and 3, applied to the source pages that will be copied. Changes the loaded copy only. */
-function prepareSourcePages(doc: PDFDocument, sourceId: string, indices: number[], report: BuildReport, redacting: boolean): void {
+function prepareSourcePages(doc: PDFDocument, sourceId: string, indices: number[], report: BuildReport, redacting: boolean, options: BuildOptions): void {
+  const { clean, keep: kept = {} } = options;
   const pages = doc.getPages();
   const pageIndexByRef = new Map(pages.map((p, i) => [p.ref.toString(), i]));
   // Every annotation on a page being copied: a reply can keep pointing at one of these (on its
@@ -66,10 +68,12 @@ function prepareSourcePages(doc: PDFDocument, sourceId: string, indices: number[
     const node = pages[index].node;
     node.delete(N('AA')); // page open/close actions
     node.delete(N('B')); // article threads, which point at other pages
-    if (redacting) {
-      // Data other programs keep with a page, out of sight.
+    if (redacting || clean?.pageData) {
+      // Data other programs keep with a page, out of sight, and the page's thumbnail picture.
+      if (clean?.pageData && (node.has(N('Metadata')) || node.has(N('PieceInfo')) || node.has(N('Thumb')))) report.pageDataRemoved++;
       node.delete(N('Metadata'));
       node.delete(N('PieceInfo'));
+      node.delete(N('Thumb'));
     }
     const annots = node.lookupMaybe(N('Annots'), PDFArray);
     if (!annots) continue;
@@ -79,12 +83,30 @@ function prepareSourcePages(doc: PDFDocument, sourceId: string, indices: number[
       const annot = annots.lookup(k);
       if (!(annot instanceof PDFDict)) continue;
       const subtype = nameOf(annot.get(N('Subtype')));
-      if (redacting && subtype !== 'Link') {
-        // A redacted file keeps links between pages and nothing else.
-        if (subtype === 'Widget') report.formFieldsLeftOut++;
-        else if (subtype === 'FileAttachment') report.attachmentsLeftOut++;
-        else if (subtype !== 'Popup') report.commentsLeftOut++;
-        continue;
+      const comment = COMMENT_KINDS.has(subtype ?? '') || subtype === 'Popup';
+      if (redacting) {
+        // A redacted file keeps links between pages, and only what the person chose to keep.
+        const keepIt =
+          subtype === 'Link' || (kept.comments && comment) || (kept.formFields && subtype === 'Widget') || (kept.attachments && subtype === 'FileAttachment');
+        if (!keepIt) {
+          if (subtype === 'Widget') report.formFieldsLeftOut++;
+          else if (subtype === 'FileAttachment') report.attachmentsLeftOut++;
+          else if (subtype !== 'Popup') report.commentsLeftOut++;
+          continue;
+        }
+      } else if (clean) {
+        if (clean.attachments && subtype === 'FileAttachment') {
+          report.attachmentsRemoved++;
+          continue;
+        }
+        if (clean.formFields === 'remove' && subtype === 'Widget') {
+          report.formFieldsRemoved++;
+          continue;
+        }
+        if (clean.comments === 'remove' && comment) {
+          if (subtype !== 'Popup') report.commentsRemoved++;
+          continue;
+        }
       }
       annot.delete(N('P'));
       annot.delete(N('AA'));
@@ -172,6 +194,13 @@ function normalise(angle: number): Rotation {
   return ((((Math.round(angle / 90) * 90) % 360) + 360) % 360) as Rotation;
 }
 
+/** How many details a file keeps: its classic details, plus one for an XMP copy. */
+function detailCount(doc: PDFDocument): number {
+  const info = doc.context.lookup(doc.context.trailerInfo.Info);
+  const classic = info instanceof PDFDict ? info.keys().length : 0;
+  return classic + (doc.catalog.has(N('Metadata')) ? 1 : 0);
+}
+
 /** A date from XMP, if it reads as one. */
 function xmpDateValue(text: string | undefined): Date | undefined {
   const date = text ? new Date(text) : undefined;
@@ -234,6 +263,8 @@ export async function buildPdf(
   }
 
   const docs = new Map<string, PDFDocument>();
+  /** Clean-up: the layers each source keeps once its hidden ones are removed. */
+  const shownLayers = new Map<string, Set<string>>();
   const outlines = new Map<string, OutlineNode[]>();
   for (const id of needed.keys()) {
     const source = sources.find((s) => s.id === id);
@@ -244,17 +275,36 @@ export async function buildPdf(
       if (!Number.isInteger(index) || index < 0 || index >= count) throw new Error(`${source.name} has no page ${index + 1}`);
     }
     outlines.set(id, readOutline(doc));
-    if (redacting) report.bookmarksLeftOut += countOutline(outlines.get(id) ?? []);
+    if (redacting && !options.keep?.bookmarks) report.bookmarksLeftOut += countOutline(outlines.get(id) ?? []);
+    if (options.clean?.bookmarks && !redacting) report.bookmarksCleared += countOutline(outlines.get(id) ?? []);
     // Whole-document scripts and attachments aren't copied: pages are. The report says so.
     report.actionsRemoved += documentActions(doc).length;
     const names = doc.catalog.lookupMaybe(N('Names'), PDFDict);
     report.attachmentsLeftOut += nameTreeEntries(doc, names?.lookupMaybe(N('EmbeddedFiles'), PDFDict)).length;
     const copied = (needed.get(id) as number[]).filter((index) => !redacted(id, index));
-    prepareSourcePages(doc, id, copied, report, redacting);
+    prepareSourcePages(doc, id, copied, report, redacting, options);
     if (!redacting) {
       // Changes to the file's own annotations, made on this loaded copy before its pages are copied.
       const replyTargets = new Set(annotations.flatMap((a) => (a.kind === 'reply' && a.source === id && a.replyTo.startsWith('file:') ? [a.replyTo.slice(5)] : [])));
       await applyFileChanges(doc, id, options.fileChanges ?? [], replyTargets, report);
+      if (options.clean?.hiddenLayers) {
+        // What's on hidden layers comes out of the pages, and those layers go, unless a page had to
+        // keep its hidden content (then the layers stay, so it stays hidden).
+        const hidden = hiddenLayers(doc);
+        let allOut = true;
+        for (const index of copied) {
+          const removed = removeHiddenContent(doc, index, hidden);
+          if (removed === null) {
+            report.hiddenContentKept++;
+            allOut = false;
+          } else report.hiddenSectionsRemoved += removed;
+        }
+        if (allOut && hidden.size > 0) {
+          const groups = doc.catalog.lookupMaybe(N('OCProperties'), PDFDict)?.lookupMaybe(N('OCGs'), PDFArray);
+          shownLayers.set(id, new Set((groups?.asArray() ?? []).map(String).filter((ref) => !hidden.has(ref))));
+          report.layersRemoved += hidden.size;
+        }
+      }
     }
     docs.set(id, doc);
   }
@@ -272,6 +322,7 @@ export async function buildPdf(
     const sourcePages = doc.getPages();
     const indices = all.filter((index) => !redacted(id, index)); // marked pages are never copied
     if (redacting) keepLayers.set(id, layersUsed(doc, indices.map((index) => sourcePages[index].node)));
+    else if (shownLayers.has(id)) keepLayers.set(id, shownLayers.get(id) as Set<string>);
     const pages = indices.map((index) => {
       const node = copier.copy(sourcePages[index].node);
       return PDFPage.of(node, out.context.register(node), out);
@@ -333,12 +384,16 @@ export async function buildPdf(
   }
 
   // Burning annotations into their pages, once all of them are in place.
-  if (!redacting) for (const page of new Set(placedPages)) flattenPage(out, page, options.flattenAll ?? false, report);
+  const burn = new Set<string>([
+    ...(options.flattenAll || options.clean?.comments === 'flatten' ? COMMENT_KINDS : []),
+    ...(options.clean?.formFields === 'flatten' ? ['Widget'] : []),
+  ]);
+  if (!redacting) for (const page of new Set(placedPages)) flattenPage(out, page, burn, report);
 
   // Bookmarks: one source keeps its own; merged files each get a bookmark named after the file.
-  // A redacted file has none.
+  // A redacted file has none unless the person chose to keep them; a cleaned one may leave them out.
   const sourceOrder = [...needed.keys()];
-  if (redacting) {
+  if ((redacting && !options.keep?.bookmarks) || (!redacting && options.clean?.bookmarks)) {
     // left out, and counted above
   } else if (sourceOrder.length === 1) {
     writeOutline(out, placeBookmarks(outlines.get(sourceOrder[0]) ?? [], sourceOrder[0], where, report));
@@ -364,10 +419,13 @@ export async function buildPdf(
     })),
   );
 
-  // Document details, and the document's language, from the first source. A redacted file has
-  // no details of its own: only that ScribeForge made it, and when.
+  // Document details, and the document's language, from the first source. A redacted file (unless
+  // the person chose to keep them) and a cleaned one with its details removed have none of their
+  // own: only that ScribeForge made it, and when. Non-standard details are never copied.
   const first = docs.get(sourceOrder[0]);
-  if (redacting) {
+  const dropDetails = (redacting && !options.keep?.details) || (!redacting && options.clean?.details);
+  if (dropDetails) {
+    if (!redacting && first) report.detailsRemoved = detailCount(first);
     writeDetails(out, undefined, { ...options, details: { title: '', author: '', subject: '', keywords: '' } });
   } else {
     writeDetails(out, first, options);

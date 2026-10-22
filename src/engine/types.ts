@@ -146,6 +146,18 @@ export interface BuildReport {
   /** Annotations burned into the pages, and those that couldn't be (they have no look of their own). */
   annotationsFlattened: number;
   annotationsNotFlattened: number;
+  /** Clean-up: what was left out of the new file. */
+  detailsRemoved: number;
+  attachmentsRemoved: number;
+  formFieldsFlattened: number;
+  formFieldsRemoved: number;
+  commentsRemoved: number;
+  layersRemoved: number;
+  hiddenSectionsRemoved: number;
+  /** Pages whose hidden content was left in place, because taking it out would move visible text. */
+  hiddenContentKept: number;
+  bookmarksCleared: number;
+  pageDataRemoved: number;
   /** Files attached to a whole document (not to a page), which aren't copied into new files. */
   attachmentsLeftOut: number;
   /** Redaction: pages made into images. */
@@ -173,6 +185,16 @@ export function emptyReport(): BuildReport {
     annotationsDeleted: 0,
     annotationsFlattened: 0,
     annotationsNotFlattened: 0,
+    detailsRemoved: 0,
+    attachmentsRemoved: 0,
+    formFieldsFlattened: 0,
+    formFieldsRemoved: 0,
+    commentsRemoved: 0,
+    layersRemoved: 0,
+    hiddenSectionsRemoved: 0,
+    hiddenContentKept: 0,
+    bookmarksCleared: 0,
+    pageDataRemoved: 0,
     attachmentsLeftOut: 0,
     pagesRedacted: 0,
     commentsLeftOut: 0,
@@ -211,6 +233,40 @@ export interface BuildOptions {
   fileChanges?: FileAnnotationChange[];
   /** Burn every comment-type annotation into its page (not links or form fields). */
   flattenAll?: boolean;
+  /** Clean-up: what the new file leaves out. */
+  clean?: CleanOptions;
+  /** Redaction: what the redacted file keeps besides its pages and the links between them. */
+  keep?: RedactKeep;
+}
+
+/**
+ * What a cleaned file leaves out (Phase 2 plan, 2d). Anything not set stays as any new file keeps
+ * it. Scripts and files attached to the whole document are never copied into new files anyway.
+ */
+export interface CleanOptions {
+  /** The document's details, both copies (the classic details and XMP), including non-standard ones. */
+  details?: boolean;
+  /** Files attached to pages. */
+  attachments?: boolean;
+  /** Flattened (they keep their look, but the fields and their data go) or removed. */
+  formFields?: 'flatten' | 'remove';
+  /** Flattened (burned into the page) or removed. */
+  comments?: 'flatten' | 'remove';
+  /** What's on hidden layers is taken out of the pages, and those layers go. */
+  hiddenLayers?: boolean;
+  bookmarks?: boolean;
+  /** Data other programs keep with a page, and page thumbnails. */
+  pageData?: boolean;
+}
+
+/** What a redacted file keeps besides its pages and the links between them. All off by default. */
+export interface RedactKeep {
+  details?: boolean;
+  bookmarks?: boolean;
+  /** These three on pages without marks (marked pages become pictures, without any of them). */
+  comments?: boolean;
+  formFields?: boolean;
+  attachments?: boolean;
 }
 
 /** One of a file's own details, as stored in the classic details and in XMP. */
@@ -269,6 +325,8 @@ export interface Carries {
   actions: (ActionPlace & { action: RiskyAction })[];
   bookmarks: number;
   layers: { name: string; hidden: boolean }[];
+  /** Pages with data other programs keep with a page, or a page thumbnail. */
+  pageData: number;
   /** Web and email addresses (each once), and how many links go to pages or to other files. */
   links: { web: string[]; webLinks: number; pages: number; otherFiles: number };
   encrypted: boolean;

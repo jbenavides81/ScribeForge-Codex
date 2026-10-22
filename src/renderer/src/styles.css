@@ -710,3 +710,9 @@ input[type='checkbox']:checked::before {
 
 /* Tools that belong together, such as Undo and Redo, stay on the same row. */
 .sf-tool-group { display: inline-flex; gap: 0.25rem; }
+
+/* Clean up: one section per thing a file can carry. */
+.sf-clean-item p { margin: 0.25rem 0; }
+.sf-clean-buttons { justify-content: flex-start; }
+/* Redaction: what else the redacted file keeps. */
+.sf-keep { margin: 0.75rem 0 0.5rem; }

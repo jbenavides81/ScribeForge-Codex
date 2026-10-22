@@ -163,6 +163,7 @@ export function combineCarries(list: Carries[]): Carries {
       authors: [...new Set(list.flatMap((c) => c.comments.authors))].sort((a, b) => a.localeCompare(b)),
     },
     actions: list.flatMap((c) => c.actions),
+    pageData: list.reduce((n, c) => n + c.pageData, 0),
     bookmarks: list.reduce((n, c) => n + c.bookmarks, 0),
     layers: [...layers].map(([name, hidden]) => ({ name, hidden })),
     links: {

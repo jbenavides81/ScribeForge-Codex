@@ -30,7 +30,7 @@ import {
   type PDFObject,
 } from '@cantoo/pdf-lib';
 import { deflateSync, inflateSync } from 'node:zlib';
-import { num, parseContent, writeContent, type Op, type Value } from './content';
+import { num, parseContent, writeContent, type Op, type Value } from '../../src/engine/content';
 
 type M = [number, number, number, number, number, number];
 type Rect = [number, number, number, number];

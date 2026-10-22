@@ -4,12 +4,13 @@ An open-source, offline PDF toolkit for Windows: view, organise, annotate, inspe
 
 ScribeForge never sends anything over the network, and it never changes the files you open: edits save to new files.
 
-**Status:** Phase 2 is under way. Version 1.3.0. You can:
+**Status:** Phase 2 is under way. Version 1.4.0. You can:
 - open, view, search and copy from PDFs;
 - on the Pages screen, merge, split, reorder, rotate, delete, extract and insert blank pages;
 - on the Document screen, highlight, underline and strike out text; add notes, text boxes, drawings, shapes (rectangles, ellipses, lines and arrows) and stamps; move and resize them; see every annotation in the comments panel; reply to comments; change or delete annotations already in the file; and burn annotations into the page;
-- on the Details screen, see and change a file's title, author, subject and keywords, and see everything else it carries: attached files, form fields, comments, scripts, bookmarks, hidden layers and links;
-- on the Document screen in Redact mode, mark areas, selected text, every match of a search, or every email address, phone number, Social Security number, card number or listed word (Find patterns), check the marks, and save a redacted copy, with a redaction log if you want one;
+- on the Details screen, see and change a file's title, author, subject and keywords, and see everything else it carries: attached files, form fields, comments, scripts, bookmarks, hidden layers, hidden page data and links;
+- on the Clean up screen, make a copy without any of those: details, attachments, form fields and comments (burned into the page or removed), what's on hidden layers, bookmarks and hidden page data;
+- on the Document screen in Redact mode, mark areas, selected text, every match of a search, or every email address, phone number, Social Security number, card number or listed word (Find patterns), check the marks, and save a redacted copy, keeping its details, bookmarks or comments if you choose, with a redaction log if you want one;
 - from Command Prompt or PowerShell, merge, split, rotate, extract, show details and redact without opening the window (see [Command line](#command-line)).
 
 Everything saves to a new file. Before saving, ScribeForge shows what the new file will carry (you can turn this off in Settings). Help is built in: press F1.
@@ -32,7 +33,7 @@ Everything saves to a new file. Before saving, ScribeForge shows what the new fi
    ```bash
    npm run dist
    ```
-   It's saved as `release\ScribeForge Setup 1.3.0.exe`.
+   It's saved as `release\ScribeForge Setup 1.4.0.exe`.
 2. Run it. The installer isn't signed, so Windows shows "Windows protected your PC" the first time: click **More info**, then **Run anyway**.
 3. Choose **Only for me** and where to install it (your user folder by default; no administrator rights needed). ScribeForge is then in the Start menu.
 
@@ -145,7 +146,7 @@ npm run trial:reset
 - **Burning in is real.** A burned-in annotation is drawn into the page exactly where it was (as the PDF standard describes) and the annotation itself is removed, so it can't be changed or removed. Tests check the page looks the same.
 - **No hidden surprises.** Before every save, a list shows what the new file carries besides its pages. Scripts and files attached to the whole document are never copied into new files.
 - **A file's details are kept in two places** (the classic details and a copy in XMP format). New files always get both, matching, so old values can't linger in either.
-- **Hidden layers stay hidden** in new files, and the list says they're there, because what's on them is still in the file.
+- **Hidden layers stay hidden** in new files, and the list says they're there, because what's on them is still in the file. Clean up can take what's on them out of the pages; the pages look the same (tested pixel for pixel).
 - **Redaction removes, it doesn't cover.**
     - Every page with a mark becomes a picture of the page with the marks blacked out, so none of its text is left. Pages without marks are copied as they are.
     - Search and selected-text marks are built from where each letter really is, so no edges of letters show.

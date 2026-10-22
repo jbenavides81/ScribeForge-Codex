@@ -74,6 +74,7 @@ export type MenuCommand =
   | 'toggle-thumbnails'
   | 'show-pages'
   | 'show-details'
+  | 'show-cleanup'
   | 'show-settings'
   | 'show-about'
   | 'show-help';

@@ -74,6 +74,9 @@ export function CarriesList({ carries }: { carries: Carries }) {
         <Items items={c.layers.map((l) => `${l.name || 'Unnamed layer'}${l.hidden ? ' (hidden)' : ''}`)} />
         {hidden > 0 && <p className="sf-muted">What's on a hidden layer is still in the file. Anyone can show it.</p>}
       </Row>
+      <Row id="pagedata" label="Hidden page data" summary={c.pageData > 0 ? `On ${plural(c.pageData, 'page')}` : 'None'}>
+        {c.pageData > 0 && <p className="sf-muted">Data other programs keep with a page, or a small picture of the page, out of sight.</p>}
+      </Row>
       <Row id="links" label="Links" summary={links.length > 0 ? links.join(', ') : 'None'}>
         <Items items={c.links.web} />
       </Row>

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import type { AppInfo, MenuCommand, OpenedFile, OpenResult, RecentFile, SettingsChange } from '../../shared/api';
 import type { Settings as AppSettings } from '../../shared/settings';
-import { DOC_INFO_FIELDS, type DocInfo, type FileReport } from '../../engine/types';
+import { DOC_INFO_FIELDS, type CleanOptions, type DocInfo, type FileReport, type RedactKeep } from '../../engine/types';
 import { annotReducer, emptyAnnots, hasAnnotChanges } from './annotate/annotState';
 import { fileAnnotsOf, type FileAnnot, type PdfAnnotationData } from './annotate/fileAnnots';
 import { applyAppearance, onSystemThemeChange } from './appearance';
@@ -15,6 +15,7 @@ import { useSaving, type ReviewRequest } from './pages/saving';
 import { emptyRedact, markLabel, marksByPage, redactReducer, type RedactMark } from './redact/redactState';
 import { engineInput, type ConfirmRequest, type SourceDoc } from './pages/sources';
 import { About } from './screens/About';
+import { CleanUp } from './screens/CleanUp';
 import { Details } from './screens/Details';
 import { Help, HELP_PAGES } from './screens/Help';
 import { Settings } from './screens/Settings';
@@ -22,7 +23,7 @@ import { Start } from './screens/Start';
 import { DocumentView } from './viewer/DocumentView';
 import { loadDocument, OpenError, type PdfDocument } from './viewer/pdfjs';
 
-type Screen = 'start' | 'document' | 'pages' | 'details' | 'settings' | 'help' | 'about';
+type Screen = 'start' | 'document' | 'pages' | 'details' | 'cleanup' | 'settings' | 'help' | 'about';
 
 interface OpenDocument {
   /** Each opened document gets a fresh viewer. */
@@ -100,9 +101,13 @@ export function App() {
   const [docReport, setDocReport] = useState<DocReport | null>(null);
   const [helpPage, setHelpPage] = useState(HELP_PAGES[0]?.file ?? '');
   const [detailsEdit, setDetailsEdit] = useState<Partial<DocInfo>>({});
+  /** What Clean up leaves out of the new file, chosen on its screen (for the open file). */
+  const [cleanChoices, setCleanChoices] = useState<CleanOptions>({});
   const [reviewing, setReviewing] = useState<(ReviewRequest & { resolve: (ok: boolean) => void }) | null>(null);
   const [redact, redactDispatch] = useReducer(redactReducer, emptyRedact);
-  const [reviewingMarks, setReviewingMarks] = useState<{ resolve: (result: { marks: RedactMark[]; log: boolean } | null) => void } | null>(null);
+  const [reviewingMarks, setReviewingMarks] = useState<{ resolve: (result: { marks: RedactMark[]; log: boolean; keep: RedactKeep } | null) => void } | null>(null);
+  /** What the redacted file keeps besides its pages: nothing, unless ticked each time. */
+  const [redactKeep, setRedactKeep] = useState<RedactKeep>({});
   /** Save a redaction log too: offered each time, off unless ticked. */
   const [wantLog, setWantLog] = useState(false);
   const redactRef = useRef(redact);
@@ -207,6 +212,7 @@ export function App() {
     annotDispatch({ type: 'reset' });
     redactDispatch({ type: 'reset' });
     setDetailsEdit({});
+    setCleanChoices({});
     setDocReport(null);
     setScreen('start');
     release([current?.pdf, ...extra.map((s) => s.pdf)]);
@@ -232,6 +238,7 @@ export function App() {
       annotDispatch({ type: 'reset' });
       redactDispatch({ type: 'reset' });
       setDetailsEdit({});
+    setCleanChoices({});
       setScreen('document');
       release([previous?.pdf, ...extra.map((s) => s.pdf)]);
     } catch (error) {
@@ -298,6 +305,9 @@ export function App() {
           break;
         case 'show-details':
           if (docRef.current) setScreen('details');
+          break;
+        case 'show-cleanup':
+          if (docRef.current) setScreen('cleanup');
           break;
         case 'save':
           if (docRef.current) void saveAllRef.current();
@@ -373,8 +383,9 @@ export function App() {
     confirm,
     review: (request) => new Promise<boolean>((resolve) => setReviewing({ ...request, resolve })),
     reviewMarks: () =>
-      new Promise<{ marks: RedactMark[]; log: boolean } | null>((resolve) => {
+      new Promise<{ marks: RedactMark[]; log: boolean; keep: RedactKeep } | null>((resolve) => {
         setWantLog(false);
+        setRedactKeep({});
         setReviewingMarks({ resolve });
       }),
     onMessage: setMessage,
@@ -392,6 +403,7 @@ export function App() {
     { id: 'document', label: 'Document', icon: 'document', disabled: !doc },
     { id: 'pages', label: 'Pages', icon: 'pages', disabled: !doc },
     { id: 'details', label: 'Details', icon: 'details', disabled: !doc },
+    { id: 'cleanup', label: 'Clean up', icon: 'clean', disabled: !doc },
     { id: 'settings', label: 'Settings', icon: 'settings' },
     { id: 'help', label: 'Help', icon: 'help' },
     { id: 'about', label: 'About', icon: 'about' },
@@ -512,6 +524,17 @@ export function App() {
             permissions={doc.permissions}
           />
         )}
+        {doc && screen === 'cleanup' && (
+          <CleanUp
+            name={doc.name}
+            report={report}
+            failed={docReport?.docId === doc.id && docReport.failed}
+            choices={cleanChoices}
+            onChange={setCleanChoices}
+            onClean={() => void saving.clean(cleanChoices)}
+            working={saving.working}
+          />
+        )}
         {screen === 'settings' && (
           <Settings
             settings={settings}
@@ -545,7 +568,7 @@ export function App() {
           </p>
           <p className="sf-muted">
             The redacted file won't include comments, form fields, bookmarks, attached files, the document's details or scripts, or any annotations you
-            added.
+            added, unless you choose to keep them below. Scripts are never kept.
           </p>
           <div className="sf-dialog-scroll" tabIndex={0} aria-label="Redaction marks">
             {redact.marks.length === 0 && <p>There are no marks left.</p>}
@@ -565,6 +588,26 @@ export function App() {
               </section>
             ))}
           </div>
+          <fieldset className="sf-section sf-keep">
+            <legend className="sf-strong">Also keep in the redacted file</legend>
+            <div className="sf-choice-row">
+              {(
+                [
+                  ['details', "The document's details"],
+                  ['bookmarks', 'Bookmarks'],
+                  ['comments', 'Comments on pages without marks'],
+                  ['formFields', 'Form fields on pages without marks'],
+                  ['attachments', 'Files attached to pages without marks'],
+                ] as const
+              ).map(([key, label]) => (
+                <label key={key} className="sf-choice">
+                  <input type="checkbox" checked={redactKeep[key] === true} onChange={(e) => setRedactKeep((k) => ({ ...k, [key]: e.target.checked }))} />
+                  <span>{label}</span>
+                </label>
+              ))}
+            </div>
+            <p className="sf-muted sf-log-hint">Anything kept is searched by the last check too.</p>
+          </fieldset>
           <label className="sf-choice">
             <input type="checkbox" checked={wantLog} onChange={(e) => setWantLog(e.target.checked)} />
             <span>Also save a redaction log next to the redacted file</span>
@@ -588,7 +631,7 @@ export function App() {
               className="sf-button sf-primary"
               disabled={redact.marks.length === 0}
               onClick={() => {
-                reviewingMarks.resolve({ marks: redactRef.current.marks, log: wantLog });
+                reviewingMarks.resolve({ marks: redactRef.current.marks, log: wantLog, keep: redactKeep });
                 setReviewingMarks(null);
               }}
             >

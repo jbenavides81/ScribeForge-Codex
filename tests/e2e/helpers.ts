@@ -113,7 +113,7 @@ export async function blockedRequests(app: ElectronApplication): Promise<string[
   return app.evaluate(() => [...((globalThis as Record<string, unknown>).__scribeforgeBlocked as string[])]);
 }
 
-export async function goTo(win: Page, screen: 'Start' | 'Document' | 'Pages' | 'Details' | 'Settings' | 'Help' | 'About'): Promise<void> {
+export async function goTo(win: Page, screen: 'Start' | 'Document' | 'Pages' | 'Details' | 'Clean up' | 'Settings' | 'Help' | 'About'): Promise<void> {
   await win.getByRole('navigation', { name: 'Main' }).getByRole('button', { name: screen, exact: true }).click();
 }
 
