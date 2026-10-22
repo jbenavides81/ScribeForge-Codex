@@ -44,6 +44,15 @@ export interface SaveRequest {
 
 export type SaveResult = { ok: true; path: string } | { ok: false; reason: 'cancelled' | 'failed'; message?: string };
 
+/** A text file saved next to a PDF just saved, such as a redaction log. */
+export interface SaveBesideRequest {
+  /** The PDF it goes with: one saved through the save window in this session. */
+  pdfPath: string;
+  /** Added to the PDF's name: "report (redacted)" becomes "report (redacted) (redaction log).txt". */
+  suffix: string;
+  text: string;
+}
+
 export interface SaveManyRequest {
   files: { name: string; bytes: Uint8Array }[];
   sourcePaths: string[];
@@ -80,6 +89,8 @@ export interface ScribeForgeApi {
   openMany(): Promise<OpenResult[]>;
   saveFile(request: SaveRequest): Promise<SaveResult>;
   saveFiles(request: SaveManyRequest): Promise<SaveManyResult>;
+  /** Saves a text file next to a PDF just saved; never replaces a file. */
+  saveBeside(request: SaveBesideRequest): Promise<SaveResult>;
   /** Tells the app there are page changes not saved yet, so closing the window asks first. */
   setUnsaved(unsaved: boolean): void;
   pathForFile(file: File): string;

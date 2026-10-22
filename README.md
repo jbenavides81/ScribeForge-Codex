@@ -4,12 +4,12 @@ An open-source, offline PDF toolkit for Windows: view, organise, annotate, inspe
 
 ScribeForge never sends anything over the network, and it never changes the files you open: edits save to new files.
 
-**Status:** Phase 2 is under way. Version 1.2.0. You can:
+**Status:** Phase 2 is under way. Version 1.3.0. You can:
 - open, view, search and copy from PDFs;
 - on the Pages screen, merge, split, reorder, rotate, delete, extract and insert blank pages;
 - on the Document screen, highlight, underline and strike out text; add notes, text boxes, drawings, shapes (rectangles, ellipses, lines and arrows) and stamps; move and resize them; see every annotation in the comments panel; reply to comments; change or delete annotations already in the file; and burn annotations into the page;
 - on the Details screen, see and change a file's title, author, subject and keywords, and see everything else it carries: attached files, form fields, comments, scripts, bookmarks, hidden layers and links;
-- on the Document screen in Redact mode, mark areas, selected text, or every match of a search, check the marks, and save a redacted copy;
+- on the Document screen in Redact mode, mark areas, selected text, every match of a search, or every email address, phone number, Social Security number, card number or listed word (Find patterns), check the marks, and save a redacted copy, with a redaction log if you want one;
 - from Command Prompt or PowerShell, merge, split, rotate, extract, show details and redact without opening the window (see [Command line](#command-line)).
 
 Everything saves to a new file. Before saving, ScribeForge shows what the new file will carry (you can turn this off in Settings). Help is built in: press F1.
@@ -21,6 +21,7 @@ Everything saves to a new file. Before saving, ScribeForge shows what the new fi
 | [docs/Roadmap.md](docs/Roadmap.md) | Phases and stops, with each stop's required checks |
 | [docs/Phase0_Plan.md](docs/Phase0_Plan.md) | Phase 0 (approved): test results, dependencies, design and decisions |
 | [docs/Plan_Phase2.md](docs/Plan_Phase2.md) | Phase 2 (approved): the Forge tools, with test results and decisions |
+| [docs/Research_TextRemoval.md](docs/Research_TextRemoval.md) | Research (stop 2c): removing only what's under a redaction mark, with a prototype in [research/](research/) |
 | [docs/manual-tests/](docs/manual-tests/) | Step-by-step scripts for trying each stop, and [v1-full.md](docs/manual-tests/v1-full.md) for the installed app |
 | [content/help/](content/help/) | The help pages shown in the app (plain Markdown; edit them without touching code) |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | How to work on ScribeForge |
@@ -31,7 +32,7 @@ Everything saves to a new file. Before saving, ScribeForge shows what the new fi
    ```bash
    npm run dist
    ```
-   It's saved as `release\ScribeForge Setup 1.2.0.exe`.
+   It's saved as `release\ScribeForge Setup 1.3.0.exe`.
 2. Run it. The installer isn't signed, so Windows shows "Windows protected your PC" the first time: click **More info**, then **Run anyway**.
 3. Choose **Only for me** and where to install it (your user folder by default; no administrator rights needed). ScribeForge is then in the Start menu.
 
@@ -122,6 +123,7 @@ npm run trial:reset
 | `tests/unit/` | Unit tests (Vitest) |
 | `tests/e2e/` | Whole-app tests (Playwright), for the built app and the installed app |
 | `content/help/` | The help pages |
+| `research/` | Research prototypes, not part of the app (stop 2c: removing only what's under a redaction mark). Their experiments run with the unit tests. |
 | `build/` | The app icon, used by the installer, and `scribeforge.cmd`, the command-line launcher |
 | `scripts/` | Trial mode, test PDFs, icon and notices |
 | `%APPDATA%\ScribeForge\settings.json` | Your settings and recent files (trial mode: `%APPDATA%\ScribeForge Trial`) |
@@ -148,7 +150,8 @@ npm run trial:reset
     - Every page with a mark becomes a picture of the page with the marks blacked out, so none of its text is left. Pages without marks are copied as they are.
     - Search and selected-text marks are built from where each letter really is, so no edges of letters show.
     - The redacted file keeps only the pages and the links between them: no details, comments, form fields, bookmarks, attached files or scripts.
-    - A last check searches the redacted file for every search term whose matches were all marked. Tests check the same for text placed in the page, a comment, the title, a bookmark and an attachment.
+    - A last check searches the redacted file for every search term and pattern match whose matches were all marked. Tests check the same for text placed in the page, a comment, the title, a bookmark and an attachment.
+    - The redaction log, if you ask for one, never contains the removed text: only hints such as `j•••@e•••.com`. A test searches it for every redacted value.
 - **The installed program is locked down.** Electron's switches are set in ScribeForge.exe itself: it can't be used to run other scripts as Node.js, ignores `NODE_OPTIONS`, loads only its own packaged files, and refuses to start if those files have been changed. Tests read the switches back from the installed build.
 - **The command line keeps the same rules** as the app: no network, inputs never changed or written over, PDF scripts never run, passwords never stored, and redaction checked the same way.
 - **Files locked by their author** (no password needed to open, but limits on copying or changes) can be viewed and their pages saved. ScribeForge says first that the new file won't have those limits.

@@ -14,6 +14,7 @@ export function RedactToolbar({
   tool,
   onTool,
   onFind,
+  onPatterns,
   finding,
   canUndo,
   canRedo,
@@ -29,6 +30,8 @@ export function RedactToolbar({
   tool: RedactTool;
   onTool: (tool: RedactTool) => void;
   onFind: (term: string) => void;
+  /** Opens Find patterns. */
+  onPatterns: () => void;
   finding: boolean;
   canUndo: boolean;
   canRedo: boolean;
@@ -66,15 +69,20 @@ export function RedactToolbar({
           Mark all
         </button>
       </form>
+      <button type="button" className="sf-button" onClick={onPatterns} disabled={finding || working !== null}>
+        Find patterns…
+      </button>
       <span className="sf-toolbar-gap" />
-      <button type="button" className="sf-tool" onClick={onUndo} disabled={!canUndo} title="Undo (Ctrl+Z)">
-        <Icon name="undo" size={18} />
-        <span>Undo</span>
-      </button>
-      <button type="button" className="sf-tool" onClick={onRedo} disabled={!canRedo} title="Redo (Ctrl+Y)">
-        <Icon name="redo" size={18} />
-        <span>Redo</span>
-      </button>
+      <span className="sf-tool-group">
+        <button type="button" className="sf-tool" onClick={onUndo} disabled={!canUndo} title="Undo (Ctrl+Z)">
+          <Icon name="undo" size={18} />
+          <span>Undo</span>
+        </button>
+        <button type="button" className="sf-tool" onClick={onRedo} disabled={!canRedo} title="Redo (Ctrl+Y)">
+          <Icon name="redo" size={18} />
+          <span>Redo</span>
+        </button>
+      </span>
       <span className="sf-toolbar-fill" />
       <span className="sf-hint" data-testid="redact-hint" aria-live="polite">
         {working ?? status ?? hint}

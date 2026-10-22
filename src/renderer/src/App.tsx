@@ -102,7 +102,9 @@ export function App() {
   const [detailsEdit, setDetailsEdit] = useState<Partial<DocInfo>>({});
   const [reviewing, setReviewing] = useState<(ReviewRequest & { resolve: (ok: boolean) => void }) | null>(null);
   const [redact, redactDispatch] = useReducer(redactReducer, emptyRedact);
-  const [reviewingMarks, setReviewingMarks] = useState<{ resolve: (marks: RedactMark[] | null) => void } | null>(null);
+  const [reviewingMarks, setReviewingMarks] = useState<{ resolve: (result: { marks: RedactMark[]; log: boolean } | null) => void } | null>(null);
+  /** Save a redaction log too: offered each time, off unless ticked. */
+  const [wantLog, setWantLog] = useState(false);
   const redactRef = useRef(redact);
   redactRef.current = redact;
   const docRef = useRef<OpenDocument | null>(null);
@@ -370,7 +372,11 @@ export function App() {
     redactionDpi: settings?.redactionDpi ?? 200,
     confirm,
     review: (request) => new Promise<boolean>((resolve) => setReviewing({ ...request, resolve })),
-    reviewMarks: () => new Promise<RedactMark[] | null>((resolve) => setReviewingMarks({ resolve })),
+    reviewMarks: () =>
+      new Promise<{ marks: RedactMark[]; log: boolean } | null>((resolve) => {
+        setWantLog(false);
+        setReviewingMarks({ resolve });
+      }),
     onMessage: setMessage,
     onSaved: async (path) => handleResult(await api.openPath(path)),
     // The marks are applied, so they don't count as unsaved; anything else still asks first.
@@ -559,6 +565,13 @@ export function App() {
               </section>
             ))}
           </div>
+          <label className="sf-choice">
+            <input type="checkbox" checked={wantLog} onChange={(e) => setWantLog(e.target.checked)} />
+            <span>Also save a redaction log next to the redacted file</span>
+          </label>
+          <p className="sf-muted sf-log-hint">
+            A text file listing when, which files, and each mark's page and kind. It never includes the marked text, only a hint such as j•••@e•••.com.
+          </p>
           <div className="sf-dialog-buttons">
             <button
               type="button"
@@ -575,7 +588,7 @@ export function App() {
               className="sf-button sf-primary"
               disabled={redact.marks.length === 0}
               onClick={() => {
-                reviewingMarks.resolve(redactRef.current.marks);
+                reviewingMarks.resolve({ marks: redactRef.current.marks, log: wantLog });
                 setReviewingMarks(null);
               }}
             >

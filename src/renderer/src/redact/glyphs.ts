@@ -226,7 +226,7 @@ export const PADDING = 1;
 const normalise = (s: string) => s.normalize('NFKC').toLowerCase();
 
 /** True when two letters sit on the same line, for text running in any of the four directions. */
-function sameLine(a: Rect, b: Rect): boolean {
+export function sameLine(a: Rect, b: Rect): boolean {
   const height = Math.min(a[3] - a[1], b[3] - b[1]);
   const width = Math.min(a[2] - a[0], b[2] - b[0]);
   const overlapY = Math.min(a[3], b[3]) - Math.max(a[1], b[1]);

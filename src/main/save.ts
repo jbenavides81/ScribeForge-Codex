@@ -1,11 +1,14 @@
 import { dialog, type BrowserWindow } from 'electron';
 import path from 'node:path';
-import type { SaveManyRequest, SaveManyResult, SaveRequest, SaveResult } from '../shared/api';
+import type { SaveBesideRequest, SaveManyRequest, SaveManyResult, SaveRequest, SaveResult } from '../shared/api';
 import { safeFileName } from '../engine/names';
 import { samePath, uniquePath, writeSafely } from './fileWrite';
 
 // Saving. ScribeForge writes only where the person chose in a dialog, never over an existing file
 // without asking, and replacing an original asks a second, plain question first.
+
+/** PDFs saved through the save window in this session: the only places a file can be saved beside. */
+const savedHere = new Set<string>();
 
 function pdfName(name: string): string {
   return `${safeFileName(name.replace(/\.pdf$/i, ''))}.pdf`;
@@ -46,9 +49,29 @@ export async function saveWithDialog(win: BrowserWindow, req: SaveRequest): Prom
   }
   try {
     writeSafely(target, req.bytes);
+    savedHere.add(path.resolve(target).toLowerCase());
     return { ok: true, path: target };
   } catch {
     return { ok: false, reason: 'failed', message: `ScribeForge couldn't save ${path.basename(target)}. Check the folder isn't read-only and the file isn't open in another program.` };
+  }
+}
+
+/**
+ * Saves a text file (such as a redaction log) next to a PDF the person just saved, named after
+ * it. Only beside a PDF saved through the save window in this session, and never over a file.
+ */
+export function saveBeside(req: SaveBesideRequest): SaveResult {
+  const pdf = typeof req?.pdfPath === 'string' ? path.resolve(req.pdfPath) : '';
+  if (!pdf || !savedHere.has(pdf.toLowerCase()) || typeof req.text !== 'string' || typeof req.suffix !== 'string') {
+    return { ok: false, reason: 'failed', message: 'There is no saved file to put it beside.' };
+  }
+  const name = `${safeFileName(`${path.basename(pdf).replace(/\.pdf$/i, '')} (${req.suffix})`)}.txt`;
+  const target = uniquePath(path.dirname(pdf), name);
+  try {
+    writeSafely(target, new TextEncoder().encode(req.text));
+    return { ok: true, path: target };
+  } catch {
+    return { ok: false, reason: 'failed', message: `ScribeForge couldn't save ${name}.` };
   }
 }
 

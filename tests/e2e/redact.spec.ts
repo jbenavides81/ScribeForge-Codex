@@ -1,7 +1,7 @@
 // Stop 1e: redaction, driven through the real app. Every redacted file is then searched for the
 // redacted text in every string and decompressed stream, and read back with pdf.js.
 import { expect, test, type Page } from '@playwright/test';
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { findEverywhere, links, pageTexts } from '../unit/support/inspect';
@@ -89,6 +89,8 @@ test('find and mark, then redact: the term is found nowhere and the unmarked pag
   await expect(win.getByTestId('message')).toContainText('Saved redacted.pdf (3 pages, 2 pages redacted).');
   expect((await dialogLog(app)).find((d) => d.kind === 'save')?.defaultPath).toBe(path.join(FIXTURES, 'redaction (redacted).pdf'));
 
+  // No log unless asked for: only the redacted file is saved.
+  expect(readdirSync(path.dirname(target))).toEqual(['redacted.pdf']);
   const bytes = read(target);
   expect(await findEverywhere(bytes, TERM)).toEqual([]);
   const texts = await pageTexts(bytes);

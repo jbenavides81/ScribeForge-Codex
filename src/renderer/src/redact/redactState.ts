@@ -2,6 +2,7 @@
 // is selected, and undo/redo. Plain functions with no screen code, so the unit tests can check
 // every change.
 import type { Rect } from '../../../engine/types';
+import type { PatternId } from './patterns';
 
 export interface RedactMark {
   id: string;
@@ -17,6 +18,8 @@ export interface RedactMark {
   term?: string;
   group?: string;
   groupSize?: number;
+  /** Found by Find patterns: which pattern, or "words" for the list of words and phrases. */
+  pattern?: PatternId | 'words';
 }
 
 export interface RedactState {

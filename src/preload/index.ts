@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
-import type { MenuCommand, SaveManyRequest, SaveRequest, ScribeForgeApi, SettingsChange } from '../shared/api';
+import type { MenuCommand, SaveBesideRequest, SaveManyRequest, SaveRequest, ScribeForgeApi, SettingsChange } from '../shared/api';
 
 // The only things the screens can ask the rest of the app to do.
 const api: ScribeForgeApi = {
@@ -11,6 +11,7 @@ const api: ScribeForgeApi = {
   openMany: () => ipcRenderer.invoke('file:open-many'),
   saveFile: (request: SaveRequest) => ipcRenderer.invoke('file:save', request),
   saveFiles: (request: SaveManyRequest) => ipcRenderer.invoke('file:save-many', request),
+  saveBeside: (request: SaveBesideRequest) => ipcRenderer.invoke('file:save-beside', request),
   setUnsaved: (unsaved: boolean) => ipcRenderer.send('doc:unsaved', unsaved === true),
   pathForFile: (file: File) => webUtils.getPathForFile(file),
   recentFiles: () => ipcRenderer.invoke('recent:list'),

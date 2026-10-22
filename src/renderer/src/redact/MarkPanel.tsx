@@ -1,12 +1,14 @@
 import type { Dispatch } from 'react';
 import { Icon } from '../components/Icon';
 import { plural } from '../words';
+import { PATTERNS } from './patterns';
 import { markLabel, type RedactAction, type RedactMark } from './redactState';
 
 /** The selected redaction mark: what it covers, and Remove. */
 export function MarkPanel({ mark, marks, dispatch }: { mark: RedactMark; marks: RedactMark[]; dispatch: Dispatch<RedactAction> }) {
   const sameSearch = mark.group ? marks.filter((m) => m.group === mark.group) : [];
-  const kind = mark.kind === 'area' ? 'Area' : mark.kind === 'text' ? 'Selected text' : `Search for “${mark.term}”`;
+  const pattern = mark.pattern === 'words' ? 'From the list of words' : PATTERNS.find((p) => p.id === mark.pattern)?.name;
+  const kind = mark.kind === 'area' ? 'Area' : mark.kind === 'text' ? 'Selected text' : (pattern ?? `Search for “${mark.term}”`);
   return (
     <aside className="sf-annot-panel" aria-label="Redaction mark" data-testid="mark-panel">
       <div className="sf-annot-panel-head">

@@ -704,3 +704,9 @@ input[type='checkbox']:checked::before {
 
 /* The tool's hint wraps in its own space, so Save stays on the same row. */
 .sf-annotate-bar .sf-hint { flex: 1 1 14rem; min-width: 0; text-align: right; }
+
+/* The redaction log choice, under the list of marks. */
+.sf-log-hint { margin: 0; }
+
+/* Tools that belong together, such as Undo and Redo, stay on the same row. */
+.sf-tool-group { display: inline-flex; gap: 0.25rem; }

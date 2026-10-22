@@ -28,6 +28,8 @@ import { Icon } from '../components/Icon';
 import type { Pt, Rect } from '../../../engine/types';
 import { findTerm, glyphsIn, lineBoxes, PADDING, pageGlyphs, pageMayContain, type Glyph } from '../redact/glyphs';
 import { MarkPanel } from '../redact/MarkPanel';
+import { PatternDialog, type FoundMatch } from '../redact/PatternDialog';
+import { findPatterns, textMayMatch, type PatternId } from '../redact/patterns';
 import { RedactionLayer, type DragBox } from '../redact/RedactionLayer';
 import { newMarkId, type RedactAction, type RedactMark, type RedactState } from '../redact/redactState';
 import { ModeSwitch, RedactToolbar, type RedactTool } from '../redact/RedactToolbar';
@@ -135,6 +137,7 @@ export function DocumentView({
   const [drag, setDrag] = useState<DragBox | null>(null);
   const [finding, setFinding] = useState(false);
   const [findResult, setFindResult] = useState<string | null>(null);
+  const [patternsOpen, setPatternsOpen] = useState(false);
   const glyphCache = useRef(new Map<number, Promise<Glyph[]>>());
   const relayout = useCallback(() => setLayout((n) => n + 1), []);
   const redacting = mode === 'redact';
@@ -368,6 +371,50 @@ export function DocumentView({
     } finally {
       setFinding(false);
     }
+  };
+
+  /** Find patterns: every match of the chosen patterns and words, on every page. */
+  const searchPatterns = async (patterns: PatternId[], words: string[], progress: (text: string) => void): Promise<FoundMatch[]> => {
+    const found: FoundMatch[] = [];
+    for (let index = 0; index < pdf.numPages; index++) {
+      if (index % 10 === 0) progress(`Searching page ${index + 1} of ${pdf.numPages}…`);
+      // Quick check of the page's text first; letter positions only for pages that might match.
+      const content = await (await pdf.getPage(index + 1)).getTextContent();
+      const text = content.items.map((i) => ('str' in i ? i.str : '')).join(' ');
+      if (!textMayMatch(text, patterns, words)) continue;
+      findPatterns(await glyphsOf(index), patterns, words).forEach((m, i) => found.push({ ...m, id: `${index}-${i}`, page: index }));
+    }
+    return found;
+  };
+
+  /**
+   * The ticked matches become marks. Each value is a group of its own, sized by how many times it
+   * was found, so the last check searches the redacted file only for values marked everywhere.
+   */
+  const markPatterns = (ticked: FoundMatch[], all: FoundMatch[]) => {
+    const keyOf = (m: FoundMatch) => (m.pattern === 'words' ? `words:${m.term}` : `${m.pattern}:${m.text.replace(/\s+/g, ' ')}`);
+    const totals = new Map<string, number>();
+    for (const m of all) totals.set(keyOf(m), (totals.get(keyOf(m)) ?? 0) + 1);
+    const groups = new Map<string, string>();
+    const marks: RedactMark[] = ticked.map((m) => {
+      const key = keyOf(m);
+      if (!groups.has(key)) groups.set(key, newMarkId());
+      return {
+        id: newMarkId(),
+        page: m.page,
+        kind: 'search',
+        rects: m.boxes,
+        text: m.text,
+        term: m.pattern === 'words' ? m.term : m.text,
+        group: groups.get(key),
+        groupSize: totals.get(key),
+        pattern: m.pattern,
+      };
+    });
+    redactDispatch({ type: 'add', marks });
+    setPatternsOpen(false);
+    const pages = new Set(ticked.map((m) => m.page)).size;
+    setFindResult(`Marked ${plural(ticked.length, 'match', 'matches')} on ${plural(pages, 'page')}.`);
   };
 
   /** Mark area: drag a box across part of a page. */
@@ -815,6 +862,7 @@ export function DocumentView({
             if (t !== 'select') redactDispatch({ type: 'select', id: null });
           }}
           onFind={(term) => void findAndMark(term)}
+          onPatterns={() => setPatternsOpen(true)}
           finding={finding}
           canUndo={redact.past.length > 0}
           canRedo={redact.future.length > 0}
@@ -903,6 +951,7 @@ export function DocumentView({
             />
           )}
           {selectedMark && <MarkPanel mark={selectedMark} marks={redact.marks} dispatch={redactDispatch} />}
+          {patternsOpen && <PatternDialog search={searchPatterns} onMark={markPatterns} onCancel={() => setPatternsOpen(false)} />}
         </div>
         {commentsOpen && (
           <CommentsPanel

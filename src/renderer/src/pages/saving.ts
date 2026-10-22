@@ -11,6 +11,7 @@ import { toEngineInput, type AnnotState } from '../annotate/annotState';
 import { fileChanges, type FileAnnot } from '../annotate/fileAnnots';
 import { combineCarries } from '../details/describe';
 import { burnPage } from '../redact/burn';
+import { redactionLog } from '../redact/log';
 import { completeTerms, type RedactMark } from '../redact/redactState';
 import { browserSurface } from '../redact/surface';
 import { pdfjsLib } from '../viewer/pdfjs';
@@ -21,6 +22,8 @@ import type { EditState, Tile } from './editState';
 import { engineInput, type ConfirmRequest, type SourceDoc } from './sources';
 
 const api = window.scribeforge;
+
+const fileName = (p: string) => p.split(/[\\/]/).pop() ?? p;
 
 /** Several build reports added together (for split). */
 function addReports(reports: BuildReport[]): BuildReport {
@@ -70,7 +73,7 @@ export function useSaving({
   confirm: (request: ConfirmRequest) => Promise<boolean>;
   review: (request: ReviewRequest) => Promise<boolean>;
   /** Shows the redaction marks for checking. The marks left when the person goes on, or null. */
-  reviewMarks: () => Promise<RedactMark[] | null>;
+  reviewMarks: () => Promise<{ marks: RedactMark[]; log: boolean } | null>;
   onMessage: (text: string) => void;
   /** Opens the saved file; the message about saving is shown once it's open. */
   onSaved: (path: string) => Promise<void>;
@@ -195,8 +198,9 @@ export function useSaving({
    */
   const redact = () =>
     run(async () => {
-      const marks = await reviewMarks();
-      if (!marks || marks.length === 0) return;
+      const reviewedMarks = await reviewMarks();
+      if (!reviewedMarks || reviewedMarks.marks.length === 0) return;
+      const { marks, log } = reviewedMarks;
       const items = edit.tiles.map((t) => t.item);
       if (items.length === 0 || !(await lockCheck(items))) return;
       const kept = new Set(items.flatMap((i) => (i.kind === 'page' && i.source === primary.id ? [i.index] : [])));
@@ -233,8 +237,26 @@ export function useSaving({
       setWorking('Saving…');
       const result = await api.saveFile({ bytes, suggestedName: name, sourcePaths: sources.map((s) => s.path) });
       if (result.ok) {
+        // The log, if asked for: next to the redacted file, with hints instead of the marked text.
+        let logged = '';
+        if (log) {
+          const text = redactionLog({
+            made: new Date().toISOString(),
+            version: producer.replace(/^ScribeForge /, ''),
+            source: primary.name,
+            saved: fileName(result.path),
+            report,
+            dpi: lowest,
+            marks: marks.filter((m) => kept.has(m.page)),
+            marksLeftOut: marks.length - used,
+            checked: terms.length,
+            found: found.length,
+          });
+          const savedLog = await api.saveBeside({ pdfPath: result.path, suffix: 'redaction log', text });
+          logged = savedLog.ok ? `\nRedaction log saved as ${fileName(savedLog.path)}.` : `\nThe redaction log couldn't be saved. ${savedLog.message ?? ''}`.trimEnd();
+        }
         // Shown first: opening the redacted file may ask about other unsaved changes.
-        onMessage(redactedMessage(result.path, report));
+        onMessage(redactedMessage(result.path, report) + logged);
         setWorking('Opening the new file…');
         await onRedacted(result.path);
       } else if (result.reason === 'failed') onMessage(result.message ?? "ScribeForge couldn't save the file.");

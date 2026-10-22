@@ -7,7 +7,7 @@ import { isOpenableLink } from '../shared/links';
 import { applyChange } from '../shared/settings';
 import { presetFor } from '../shared/themes';
 import { clearRecent, forgetRecent, openManyWithDialog, openPath, openWithDialog, recentFiles } from './files';
-import { saveManyWithDialog, saveWithDialog } from './save';
+import { saveBeside, saveManyWithDialog, saveWithDialog } from './save';
 import { commandWords } from './cli/args';
 import { runCli } from './cli/main';
 import { buildMenu } from './menu';
@@ -111,6 +111,7 @@ function registerHandlers(): void {
   ipcMain.handle('file:open-many', () => openManyWithDialog(win(), store));
   ipcMain.handle('file:save', (_e, request) => saveWithDialog(win(), request));
   ipcMain.handle('file:save-many', (_e, request) => saveManyWithDialog(win(), request));
+  ipcMain.handle('file:save-beside', (_e, request) => saveBeside(request));
   ipcMain.on('doc:unsaved', (_e, value: unknown) => {
     unsaved = value === true;
   });

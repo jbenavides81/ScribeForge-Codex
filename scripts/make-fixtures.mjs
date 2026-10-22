@@ -384,6 +384,42 @@ async function textStyles() {
 // For redaction (stop 1e): a test term placed in page text (plain, kerned, invisible and on a
 // hidden layer), a comment, the title, the XMP copy, a bookmark, an attachment's name and its
 // contents, a script, and in hidden data on a page that isn't marked.
+// For stop 2c's pattern search: made-up examples of each pattern, and look-alikes that must not
+// match. The card numbers are the card companies' published test numbers.
+export const PATTERN_EXAMPLES = {
+  email: ['jane.doe@example.com', 'j.smith+work@mail.example.org'],
+  phone: ['(555) 123-4567', '555.987.6543', '+1 555 246 8135', '+44 20 7946 0958'],
+  ssn: ['123-45-6789', '234 56 7890'],
+  card: ['4111 1111 1111 1111', '5500-0000-0000-0004', '378282246310005'],
+  words: ['Project Nightingale'],
+};
+export const PATTERN_LOOKALIKES = ['user@localhost', '2026-10-21', '12345-6789', '000-12-3456', '666-12-3456', '123-00-4567', '4111 1111 1111 1112', '1234567890123456'];
+
+async function patterns() {
+  const doc = await PDFDocument.create({ updateMetadata: false });
+  doc.setTitle('Pattern test document');
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const e = PATTERN_EXAMPLES;
+  lines(doc.addPage([612, 792]), font, [
+    'PATTERNS-PAGE-1',
+    `Write to ${e.email[0]} or ${e.email[1]} for help.`,
+    `Call ${e.phone[0]} or ${e.phone[1]} during the day.`,
+    `Abroad: ${e.phone[2]} or ${e.phone[3]}.`,
+    `SSN on file: ${e.ssn[0]}, spouse ${e.ssn[1]}.`,
+    'Look-alikes that are not matches:',
+    'user@localhost, dated 2026-10-21, ZIP 12345-6789, ref 000-12-3456,',
+    'ref 666-12-3456, ref 123-00-4567, item 1234567890123456.',
+  ]);
+  lines(doc.addPage([612, 792]), font, [
+    'PATTERNS-PAGE-2',
+    `Paid with ${e.card[0]} and ${e.card[1]}.`,
+    `Corporate card ${e.card[2]}.`,
+    'Not a card: 4111 1111 1111 1112.',
+    `The code name is ${e.words[0]}, kept quiet.`,
+  ]);
+  return doc.save();
+}
+
 export const REDACT_TERM = 'REDACT-ME-TERM';
 async function redaction() {
   const doc = await PDFDocument.create({ updateMetadata: false });
@@ -451,6 +487,7 @@ const files = {
   'owner-locked.pdf': await ownerLocked(),
   'text-styles.pdf': await textStyles(),
   'redaction.pdf': await redaction(),
+  'patterns.pdf': await patterns(),
   // Cut off halfway through.
   'damaged-truncated.pdf': normalBytes.slice(0, Math.floor(normalBytes.length / 2)),
   // The cross-reference table's position points nowhere.
