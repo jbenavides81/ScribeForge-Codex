@@ -1,10 +1,10 @@
 # ScribeForge
 
-An open-source, offline PDF toolkit for Windows: view, organise, annotate, inspect, redact and sign PDFs, with an encrypted archive to follow. ScribeForge is a BC6 app.
+An open-source, offline PDF toolkit for Windows: view, organise, annotate, inspect, redact, sign and archive PDFs. ScribeForge is a BC6 app.
 
 ScribeForge never sends anything over the network, and it never changes the files you open: edits save to new files.
 
-**Status:** Phase 2 is complete. Version 1.5.0. You can:
+**Status:** Phase 3 (the Archive) is under way. Version 1.6.0. You can:
 - open, view, search and copy from PDFs;
 - on the Pages screen, merge, split, reorder, rotate, delete, extract and insert blank pages;
 - on the Document screen, highlight, underline and strike out text; add notes, text boxes, drawings, shapes (rectangles, ellipses, lines and arrows) and stamps; move and resize them; see every annotation in the comments panel; reply to comments; change or delete annotations already in the file; and burn annotations into the page;
@@ -12,6 +12,7 @@ ScribeForge never sends anything over the network, and it never changes the file
 - on the Clean up screen, make a copy without any of those: details, attachments, form fields and comments (burned into the page or removed), what's on hidden layers, bookmarks and hidden page data;
 - on the Sign screen, sign a PDF with a certificate file (`.pfx` or `.p12`), with a box drawn on the page, in an empty signature box the file has, or invisibly; make your own certificate; and check the signatures a file has, without the internet: whether it changed since it was signed, and whether each signer's certificate leads back to one Windows trusts or you chose to trust;
 - on the Document screen in Redact mode, mark areas, selected text, every match of a search, or every email address, phone number, Social Security number, card number or listed word (Find patterns), check the marks, and save a redacted copy, keeping its details, bookmarks or comments if you choose, with a redaction log if you want one;
+- on the Archive screen, keep encrypted copies of your PDFs in a vault on this PC, with titles, labels and notes; open them, save copies out, void, restore or erase them; see a history of every change; and make and restore encrypted backups. The vault needs your password (or a recovery code), and locks itself when ScribeForge starts, after a while unused, and when Windows locks or the PC sleeps;
 - from Command Prompt or PowerShell, merge, split, rotate, extract, show details, redact and check signatures without opening the window (see [Command line](#command-line)).
 
 Everything saves to a new file. Before saving, ScribeForge shows what the new file will carry (you can turn this off in Settings). Help is built in: press F1.
@@ -24,6 +25,7 @@ Everything saves to a new file. Before saving, ScribeForge shows what the new fi
 | [docs/Phase0_Plan.md](docs/Phase0_Plan.md) | Phase 0 (approved): test results, dependencies, design and decisions |
 | [docs/Plan_Phase2.md](docs/Plan_Phase2.md) | Phase 2 (approved): the Forge tools, with test results and decisions |
 | [docs/Plan_Sign.md](docs/Plan_Sign.md) | Signing (stop 2e, approved): test results, libraries, design and decisions |
+| [docs/Plan_Phase3.md](docs/Plan_Phase3.md) | Phase 3 (approved): the Archive, with test results and decisions |
 | [docs/Research_TextRemoval.md](docs/Research_TextRemoval.md) | Research (stop 2c): removing only what's under a redaction mark, with a prototype in [research/](research/) |
 | [docs/manual-tests/](docs/manual-tests/) | Step-by-step scripts for trying each stop, and [v1-full.md](docs/manual-tests/v1-full.md) for the installed app |
 | [content/help/](content/help/) | The help pages shown in the app (plain Markdown; edit them without touching code) |
@@ -35,11 +37,11 @@ Everything saves to a new file. Before saving, ScribeForge shows what the new fi
    ```bash
    npm run dist
    ```
-   It's saved as `release\ScribeForge Setup 1.5.0.exe`.
+   It's saved as `release\ScribeForge Setup 1.6.0.exe`.
 2. Run it. The installer isn't signed, so Windows shows "Windows protected your PC" the first time: click **More info**, then **Run anyway**.
 3. Choose **Only for me** and where to install it (your user folder by default; no administrator rights needed). ScribeForge is then in the Start menu.
 
-To remove it, use **Settings > Apps > Installed apps > ScribeForge > Uninstall** in Windows. Your settings stay in `%APPDATA%\ScribeForge`; delete that folder too if you want them gone.
+To remove it, use **Settings > Apps > Installed apps > ScribeForge > Uninstall** in Windows. Your settings and the Archive's vault stay in `%APPDATA%\ScribeForge`; make a backup of the vault first if you want to keep it, and delete that folder too if you want them gone.
 
 ## Command line
 
@@ -119,7 +121,7 @@ npm run trial:reset
 
 | Path | What it is |
 |---|---|
-| `src/main/` | The app process: window, menus, file dialogs, reading files, settings, the network guard, the command-line tool (`src/main/cli/`), and certificate files and making signatures (`src/main/sign/`) |
+| `src/main/` | The app process: window, menus, file dialogs, reading files, settings, the network guard, the command-line tool (`src/main/cli/`), certificate files and making signatures (`src/main/sign/`), and the Archive's encrypted vault (`src/main/vault/`) |
 | `src/preload/` | The small bridge the screens are allowed to call |
 | `src/renderer/` | The screens (React), styles, the pdf.js viewer, annotating, redacting, help, and the Pages screen with its worker |
 | `src/engine/` | The PDF engine for the page tools, annotations, file details, redaction and signing (`src/engine/sign/`): plain TypeScript, run in a worker inside the window and in the unit tests |
@@ -131,6 +133,7 @@ npm run trial:reset
 | `build/` | The app icon, used by the installer, and `scribeforge.cmd`, the command-line launcher |
 | `scripts/` | Trial mode, test PDFs, icon and notices |
 | `%APPDATA%\ScribeForge\settings.json` | Your settings and recent files (trial mode: `%APPDATA%\ScribeForge Trial`) |
+| `%APPDATA%\ScribeForge\Vault` | The Archive's vault, all of it encrypted (trial mode has its own) |
 
 ## Safety rules the app keeps
 
@@ -161,6 +164,13 @@ npm run trial:reset
 - **Signing keeps your key apart from PDFs.** The certificate file and its password are handled only by the part of the app that never reads PDFs. It gets the fingerprint of the prepared file and gives back only the signature, and it forgets the key straight after. The password is never saved; a test searches the app's data folder for it.
 - **A signature is added to the end of the file,** so the signed file starts with the file you opened, byte for byte, and signatures already in it stay valid. Each new signature is checked before anything is saved, and tests check them again with Node's own crypto.
 - **Checking is strict.** Anything other than another signature added after a signature counts as "changed after signing", and Open the signed version shows exactly what was signed. New files never keep a signature or its box, so they can't look signed when they aren't.
+- **The Archive keeps nothing readable on disk.**
+    - Its database lives in memory while the vault is unlocked (Electron's own SQLite) and is saved as one encrypted file. Each stored PDF is encrypted too, under a random name.
+    - Everything uses AES-256-GCM, which also detects changes: a damaged or altered part is refused, never used.
+    - The password unlocks the vault key through scrypt, and is never saved.
+    - Locking clears the key and the database from memory, and closes anything opened from the vault.
+    - Tests search every file of the vault, and the backups, for the documents' text, titles, labels and notes, and find none.
+- **The Archive's history can't be quietly rewritten.** Each entry is sealed to the one before it with the vault's key, and the database refuses to change or remove entries. It records only actions and titles, never contents, labels or notes, so erasing a document leaves nothing else behind.
 - **Files locked by their author** (no password needed to open, but limits on copying or changes) can be viewed and their pages saved. ScribeForge says first that the new file won't have those limits.
 
 ## Interim parts, to match BC6 later

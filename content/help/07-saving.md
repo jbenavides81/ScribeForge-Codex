@@ -12,6 +12,8 @@ ScribeForge never changes the files you open. Everything you do is saved to a **
 
 ScribeForge shows what the new file carries besides its pages: its details, attached files, comments, scripts, bookmarks, hidden layers and links. You can turn this off in **Settings**, under **Saving**. Redacting always shows it.
 
+When the [Archive](15-archive.md) is unlocked, the same list offers **Also keep a copy in the Archive**.
+
 ## What a new file leaves out
 
 - Scripts and actions that could run code, open a program or send data.

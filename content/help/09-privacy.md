@@ -7,7 +7,7 @@ ScribeForge never connects to the internet: no updates, no usage data, no fonts 
 ## Your files
 
 - Opening a file only reads it. Nothing you do changes it; everything is saved to a new file.
-- ScribeForge keeps no copies of your documents.
+- ScribeForge keeps no copies of your documents, except in the [Archive](15-archive.md) if you put them there, encrypted.
 - Passwords for protected files are kept in memory only while the file is open, and never saved.
 
 ## Scripts in PDFs
@@ -21,6 +21,10 @@ PDFs can hold more than their pages: details such as the author, attached files,
 ## Redaction
 
 A black box drawn over text doesn't remove the text. ScribeForge's redaction makes every marked page into a picture, so the text is gone. See [Redacting](06-redacting.md).
+
+## The Archive
+
+Documents you put in the [Archive](15-archive.md) are kept encrypted on this PC, with their titles, labels and notes. Nothing there can be read without your password, which ScribeForge never saves. The Archive locks itself when ScribeForge starts, after a while unused, and when Windows locks or the PC sleeps.
 
 ## Command line
 

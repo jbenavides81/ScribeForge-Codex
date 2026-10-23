@@ -34,6 +34,16 @@ export async function openManyWithDialog(win: BrowserWindow, store: SettingsStor
 }
 
 export async function openPath(filePath: string, store: SettingsStore): Promise<OpenResult> {
+  const result = await readPdf(filePath);
+  if (result.ok) {
+    const settings = store.get();
+    if (settings.rememberRecent) store.set({ ...settings, recentFiles: addRecent(settings.recentFiles, filePath) });
+  }
+  return result;
+}
+
+/** Reads a PDF the person chose, without adding it to the recent files (as when adding it to the Archive). */
+export async function readPdf(filePath: string): Promise<OpenResult> {
   if (typeof filePath !== 'string' || !path.isAbsolute(filePath)) {
     return { ok: false, reason: 'unreadable', path: String(filePath) };
   }
@@ -43,10 +53,7 @@ export async function openPath(filePath: string, store: SettingsStore): Promise<
     const stat = statSync(filePath);
     if (!stat.isFile()) return { ok: false, reason: 'unreadable', path: filePath };
     if (stat.size > MAX_FILE_BYTES) return { ok: false, reason: 'too-large', path: filePath };
-    const bytes = new Uint8Array(await readFile(filePath));
-    const settings = store.get();
-    if (settings.rememberRecent) store.set({ ...settings, recentFiles: addRecent(settings.recentFiles, filePath) });
-    return { ok: true, file: { path: filePath, name: path.basename(filePath), bytes } };
+    return { ok: true, file: { path: filePath, name: path.basename(filePath), bytes: new Uint8Array(await readFile(filePath)) } };
   } catch {
     return { ok: false, reason: 'unreadable', path: filePath };
   }

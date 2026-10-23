@@ -48,7 +48,9 @@ export type IconName =
   | 'clean'
   | 'seal'
   | 'tick'
-  | 'warning';
+  | 'warning'
+  | 'archive'
+  | 'lock';
 
 export const PATHS: Record<IconName, string[]> = {
   logo: [
@@ -104,5 +106,7 @@ export const PATHS: Record<IconName, string[]> = {
   seal: ['M32 8 a17 17 0 1 0 0.01 0 Z', 'M24 25 L30 31 L41 19', 'M24 40 L19 58 L27 53 L31 58 L32 42', 'M40 40 L45 58 L37 53 L33 58'],
   tick: ['M12 34 L26 48 L52 18'],
   warning: ['M32 8 L58 54 H6 Z', 'M32 24 V38', 'M32 45 V46'],
+  archive: ['M6 10 H58 V22 H6 Z', 'M10 22 V56 H54 V22', 'M24 32 H40'],
+  lock: ['M14 28 H50 V58 H14 Z', 'M22 28 V20 A10 10 0 0 1 42 20 V28', 'M32 40 V46'],
   help: ['M32 6 a26 26 0 1 0 0.01 0 Z', 'M24 25 a8 8 0 1 1 11 7.4 C 33 33.5 32 35 32 38 V40', 'M32 47 V48'],
 };

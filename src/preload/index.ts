@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { MakeCertificateRequest, MenuCommand, SaveBesideRequest, SaveManyRequest, SaveRequest, ScribeForgeApi, SettingsChange } from '../shared/api';
+import type { NewDocument } from '../shared/vault';
 
 // The only things the screens can ask the rest of the app to do.
 const api: ScribeForgeApi = {
@@ -34,6 +35,36 @@ const api: ScribeForgeApi = {
   trustCertificate: (der: string) => ipcRenderer.invoke('sign:trust-add', der),
   untrustCertificate: (der: string) => ipcRenderer.invoke('sign:trust-remove', der),
   makeCertificate: (request: MakeCertificateRequest) => ipcRenderer.invoke('sign:make', request),
+  vaultStatus: () => ipcRenderer.invoke('vault:status'),
+  vaultCreate: (password: string, withRecoveryCode: boolean) => ipcRenderer.invoke('vault:create', password, withRecoveryCode),
+  vaultUnlock: (secret: string, kind: 'password' | 'recovery') => ipcRenderer.invoke('vault:unlock', secret, kind),
+  vaultLock: () => ipcRenderer.send('vault:lock'),
+  vaultActive: () => ipcRenderer.send('vault:active'),
+  vaultDocuments: () => ipcRenderer.invoke('vault:documents'),
+  vaultThumbnail: (id: string) => ipcRenderer.invoke('vault:thumbnail', id),
+  vaultChooseFiles: () => ipcRenderer.invoke('vault:choose-files'),
+  vaultAdd: (items: NewDocument[]) => ipcRenderer.invoke('vault:add', items),
+  vaultOpen: (id: string) => ipcRenderer.invoke('vault:open', id),
+  vaultUpdate: (id: string, change: { title?: string; labels?: string[]; note?: string }) => ipcRenderer.invoke('vault:update', id, change),
+  vaultVoid: (id: string, reason: string) => ipcRenderer.invoke('vault:void', id, reason),
+  vaultRestoreDocument: (id: string) => ipcRenderer.invoke('vault:restore-document', id),
+  vaultErase: (id: string, reason: string) => ipcRenderer.invoke('vault:erase', id, reason),
+  vaultSaveCopy: (id: string) => ipcRenderer.invoke('vault:save-copy', id),
+  vaultHistory: () => ipcRenderer.invoke('vault:history'),
+  vaultSaveText: (suggestedName: string, text: string) => ipcRenderer.invoke('vault:save-text', suggestedName, text),
+  vaultChangePassword: (current: string, next: string) => ipcRenderer.invoke('vault:change-password', current, next),
+  vaultRecoveryCode: (password: string) => ipcRenderer.invoke('vault:recovery-code', password),
+  vaultBackup: () => ipcRenderer.invoke('vault:backup'),
+  vaultChooseBackup: () => ipcRenderer.invoke('vault:choose-backup'),
+  vaultRestoreBackup: (secret: string, kind: 'password' | 'recovery', restore: boolean) => ipcRenderer.invoke('vault:restore-backup', secret, kind, restore),
+  vaultForgetBackup: () => ipcRenderer.send('vault:forget-backup'),
+  onVaultLocked: (listener: (why: string) => void) => {
+    const handler = (_event: unknown, why: string) => listener(why);
+    ipcRenderer.on('vault:locked', handler);
+    return () => {
+      ipcRenderer.removeListener('vault:locked', handler);
+    };
+  },
 };
 
 contextBridge.exposeInMainWorld('scribeforge', api);

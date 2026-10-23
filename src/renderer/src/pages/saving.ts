@@ -51,6 +51,9 @@ export interface SignChoices {
  */
 export type NewFileReason = 'changes' | 'password' | 'damaged' | null;
 
+/** The answer to the list shown before saving: don't save, or save (and also keep a copy in the Archive). */
+export type ReviewAnswer = false | { archive: boolean };
+
 /** Shown before saving, when Settings says so. */
 export interface ReviewRequest {
   carries: Carries;
@@ -59,6 +62,8 @@ export interface ReviewRequest {
   notes: string[];
   /** For redaction, which has its own heading. */
   title?: string;
+  /** Offer "Also keep a copy in the Archive" (one new file, with the Archive unlocked). */
+  archiveOffer?: boolean;
 }
 
 export function useSaving({
@@ -72,6 +77,8 @@ export function useSaving({
   reviewBeforeSave,
   redactionDpi,
   signed: signedCount,
+  archiveOpen,
+  keepInArchive,
   confirm,
   review,
   reviewMarks,
@@ -93,8 +100,12 @@ export function useSaving({
   redactionDpi: RedactionDpi;
   /** How many signatures the open file has (null until it's been read): new files leave them out, so saving asks first. */
   signed: number | null;
+  /** The Archive is unlocked, so a new file can also be kept in it. */
+  archiveOpen: boolean;
+  /** Keeps a copy of a just-saved file in the Archive; a line for the message after saving. */
+  keepInArchive: (path: string, bytes: Uint8Array) => Promise<string>;
   confirm: (request: ConfirmRequest) => Promise<boolean>;
-  review: (request: ReviewRequest) => Promise<boolean>;
+  review: (request: ReviewRequest) => Promise<ReviewAnswer>;
   /** Shows the redaction marks for checking. The marks left when the person goes on, or null. */
   reviewMarks: () => Promise<{ marks: RedactMark[]; log: boolean; keep: RedactKeep } | null>;
   onMessage: (text: string) => void;
@@ -175,13 +186,13 @@ export function useSaving({
   };
 
   /** Shows what the new files carry, when Settings says so. True to go on and save. */
-  const reviewed = async (made: { name: string; bytes: Uint8Array }[], report: BuildReport, notes = buildNotes(report), title?: string): Promise<boolean> => {
-    if (!reviewBeforeSave) return true;
+  const reviewed = async (made: { name: string; bytes: Uint8Array }[], report: BuildReport, notes = buildNotes(report), title?: string): Promise<ReviewAnswer> => {
+    if (!reviewBeforeSave) return { archive: false };
     setWorking('Checking what the new file carries…');
     const carries: Carries[] = [];
     for (const file of made) carries.push((await inspectDocument({ id: file.name, name: file.name, bytes: file.bytes })).carries);
     setWorking(null);
-    return review({ carries: combineCarries(carries), files: made.length, notes, title });
+    return review({ carries: combineCarries(carries), files: made.length, notes, title, archiveOffer: archiveOpen && made.length === 1 });
   };
 
   const save = (tiles: Tile[], name: string, openAfter: boolean) =>
@@ -190,15 +201,17 @@ export function useSaving({
       if (items.length === 0 || !(await lockCheck(items)) || !(await signedCheck(items))) return;
       setWorking('Making the new file…');
       const { bytes, report } = await build(items);
-      if (!(await reviewed([{ name, bytes }], report))) return;
+      const answer = await reviewed([{ name, bytes }], report);
+      if (!answer) return;
       setWorking('Saving…');
       const result = await api.saveFile({ bytes, suggestedName: name, sourcePaths: sources.map((s) => s.path) });
       if (result.ok) {
+        const archived = answer.archive ? await keepInArchive(result.path, bytes) : '';
         if (openAfter) {
           setWorking('Opening the new file…');
           await onSaved(result.path);
         }
-        onMessage(savedMessage(result.path, report));
+        onMessage(savedMessage(result.path, report) + archived);
       } else if (result.reason === 'failed') onMessage(result.message ?? "ScribeForge couldn't save the file.");
     });
 
@@ -276,10 +289,12 @@ export function useSaving({
       const { carries } = await inspectDocument({ id: name, name, bytes });
       setWorking(null);
       const lowest = Math.min(...Object.values(pages).map((p) => p.dpi));
-      if (!(await review({ carries, files: 1, notes: redactionNotes(report, used, marks.length - used, lowest, keep), title: 'What the redacted file carries' }))) return;
+      const answer = await review({ carries, files: 1, notes: redactionNotes(report, used, marks.length - used, lowest, keep), title: 'What the redacted file carries', archiveOffer: archiveOpen });
+      if (!answer) return;
       setWorking('Saving…');
       const result = await api.saveFile({ bytes, suggestedName: name, sourcePaths: sources.map((s) => s.path) });
       if (result.ok) {
+        const archived = answer.archive ? await keepInArchive(result.path, bytes) : '';
         // The log, if asked for: next to the redacted file, with hints instead of the marked text.
         let logged = '';
         if (log) {
@@ -300,7 +315,7 @@ export function useSaving({
           logged = savedLog.ok ? `\nRedaction log saved as ${fileName(savedLog.path)}.` : `\nThe redaction log couldn't be saved. ${savedLog.message ?? ''}`.trimEnd();
         }
         // Shown first: opening the redacted file may ask about other unsaved changes.
-        onMessage(redactedMessage(result.path, report) + logged);
+        onMessage(redactedMessage(result.path, report) + logged + archived);
         setWorking('Opening the new file…');
         await onRedacted(result.path);
       } else if (result.reason === 'failed') onMessage(result.message ?? "ScribeForge couldn't save the file.");
@@ -317,13 +332,15 @@ export function useSaving({
       setWorking('Making the cleaned file…');
       const { bytes, report } = await build(items, choices);
       const name = outputName(primary.name, 'cleaned');
-      if (!(await reviewed([{ name, bytes }], report, [...cleanNotes(report), ...buildNotes(report)], 'What the cleaned file carries'))) return;
+      const answer = await reviewed([{ name, bytes }], report, [...cleanNotes(report), ...buildNotes(report)], 'What the cleaned file carries');
+      if (!answer) return;
       setWorking('Saving…');
       const result = await api.saveFile({ bytes, suggestedName: name, sourcePaths: sources.map((s) => s.path) });
       if (result.ok) {
+        const archived = answer.archive ? await keepInArchive(result.path, bytes) : '';
         setWorking('Opening the new file…');
         await onSaved(result.path);
-        onMessage(cleanedMessage(result.path, report));
+        onMessage(cleanedMessage(result.path, report) + archived);
       } else if (result.reason === 'failed') onMessage(result.message ?? "ScribeForge couldn't save the file.");
     });
 

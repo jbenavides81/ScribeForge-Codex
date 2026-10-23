@@ -14,7 +14,10 @@ import { Icon, type IconName } from './components/Icon';
 import { editReducer, emptyEdit, hasChanges, newKey, type Tile } from './pages/editState';
 import { PagesView } from './pages/PagesView';
 import { checkDocumentSignatures, emptySignatureBoxes, inspectDocument } from './pages/engineClient';
-import { useSaving, type NewFileReason, type ReviewRequest, type SignChoices } from './pages/saving';
+import { useSaving, type NewFileReason, type ReviewAnswer, type ReviewRequest, type SignChoices } from './pages/saving';
+import type { NewDocument, VaultDocument, VaultStatus } from '../../shared/vault';
+import { firstPagePicture } from './archive/thumbnail';
+import { Archive } from './screens/Archive';
 import { emptyRedact, markLabel, marksByPage, redactReducer, type RedactMark } from './redact/redactState';
 import { engineInput, type ConfirmRequest, type SourceDoc } from './pages/sources';
 import { About } from './screens/About';
@@ -30,7 +33,7 @@ import { SignDialog } from './sign/SignDialog';
 import { DocumentView } from './viewer/DocumentView';
 import { loadDocument, OpenError, type PdfDocument } from './viewer/pdfjs';
 
-type Screen = 'start' | 'document' | 'pages' | 'details' | 'cleanup' | 'sign' | 'settings' | 'help' | 'about';
+type Screen = 'start' | 'document' | 'pages' | 'details' | 'cleanup' | 'sign' | 'archive' | 'settings' | 'help' | 'about';
 
 interface OpenDocument {
   /** Each opened document gets a fresh viewer. */
@@ -43,6 +46,8 @@ interface OpenDocument {
   password?: string;
   /** For a locked file, what its author allows (pdf.js flags); null when it isn't locked. */
   permissions: number[] | null;
+  /** Opened from the Archive: it's decrypted, so it closes when the vault locks. */
+  fromVault?: boolean;
 }
 
 /** The open document's details and what it carries, read in the background after opening. */
@@ -110,7 +115,12 @@ export function App() {
   const [detailsEdit, setDetailsEdit] = useState<Partial<DocInfo>>({});
   /** What Clean up leaves out of the new file, chosen on its screen (for the open file). */
   const [cleanChoices, setCleanChoices] = useState<CleanOptions>({});
-  const [reviewing, setReviewing] = useState<(ReviewRequest & { resolve: (ok: boolean) => void }) | null>(null);
+  const [reviewing, setReviewing] = useState<(ReviewRequest & { resolve: (answer: ReviewAnswer) => void }) | null>(null);
+  /** "Also keep a copy in the Archive", in the list shown before saving. */
+  const [keepCopy, setKeepCopy] = useState(false);
+  /** Whether the Archive is unlocked, and a signal each time it locks. */
+  const [vault, setVault] = useState<VaultStatus | null>(null);
+  const [lockSignal, setLockSignal] = useState<{ seq: number; why: string } | null>(null);
   const [redact, redactDispatch] = useReducer(redactReducer, emptyRedact);
   const [reviewingMarks, setReviewingMarks] = useState<{ resolve: (result: { marks: RedactMark[]; log: boolean; keep: RedactKeep } | null) => void } | null>(null);
   /** What the redacted file keeps besides its pages: nothing, unless ticked each time. */
@@ -253,7 +263,7 @@ export function App() {
     release([current?.pdf, ...extra.map((s) => s.pdf)]);
   }, []);
 
-  const handleResult = useCallback(async (result: OpenResult) => {
+  const handleResult = useCallback(async (result: OpenResult, options: { fromVault?: boolean } = {}) => {
     setRecent(await api.recentFiles());
     if (!result.ok) {
       if (result.reason !== 'cancelled') setMessage(openFailureMessage(result));
@@ -267,7 +277,7 @@ export function App() {
       const previous = docRef.current;
       const extra = addedRef.current;
       const id = ++nextDocId.current;
-      setDoc({ id, pdf, name: file.name, path: file.path, bytes: file.bytes, password: used, permissions });
+      setDoc({ id, pdf, name: file.name, path: file.path, bytes: file.bytes, password: used, permissions, fromVault: options.fromVault });
       setAdded([]);
       dispatch({ type: 'reset', tiles: pageTiles(`doc${id}`, pdf.numPages) });
       annotDispatch({ type: 'reset' });
@@ -349,6 +359,9 @@ export function App() {
         case 'show-sign':
           if (docRef.current) setScreen('sign');
           break;
+        case 'show-archive':
+          setScreen('archive');
+          break;
         case 'save':
           if (docRef.current) void saveAllRef.current();
           break;
@@ -360,6 +373,36 @@ export function App() {
       }
     });
   }, [openWithDialog, closeWithCheck]);
+
+  // The Archive locks (idle, Windows locked, sleep, or Lock): anything opened from it closes, since
+  // it's decrypted. Unsaved changes to it are lost (Phase 3 plan, question 5).
+  useEffect(() => {
+    let seq = 0;
+    return api.onVaultLocked((why) => {
+      setLockSignal({ seq: ++seq, why });
+      setVault((v) => (v ? { ...v, unlocked: false } : v));
+      if (docRef.current?.fromVault) {
+        closeDocument();
+        setScreen('archive');
+        setMessage('The Archive locked, so the document opened from it was closed.');
+      }
+    });
+  }, [closeDocument]);
+
+  // Using ScribeForge (typing, clicking, scrolling) keeps the Archive from locking for being idle.
+  useEffect(() => {
+    let last = 0;
+    const active = () => {
+      const now = Date.now();
+      if (now - last < 10_000) return;
+      last = now;
+      api.vaultActive();
+    };
+    for (const kind of ['pointerdown', 'keydown', 'wheel'] as const) window.addEventListener(kind, active, { passive: true });
+    return () => {
+      for (const kind of ['pointerdown', 'keydown', 'wheel'] as const) window.removeEventListener(kind, active);
+    };
+  }, []);
 
   // Dragging a PDF onto the window opens it. Nothing dropped ever navigates the window.
   // (On the Pages screen, a dropped PDF is added to the document instead.)
@@ -421,8 +464,19 @@ export function App() {
     reviewBeforeSave: settings?.reviewBeforeSave ?? true,
     redactionDpi: settings?.redactionDpi ?? 200,
     signed: report ? report.carries.signatures.filter((s) => s.signed).length : null,
+    archiveOpen: vault?.unlocked === true,
+    keepInArchive: async (path, bytes) => {
+      const name = path.split(/[\\/]/).pop() ?? 'document.pdf';
+      const item = await vaultItem({ path, name, bytes });
+      const added = item ? await api.vaultAdd([item]) : null;
+      return added?.ok ? '\nA copy is also in the Archive.' : `\nThe copy for the Archive couldn't be kept${added && !added.ok ? `: ${added.message}` : '.'}`;
+    },
     confirm,
-    review: (request) => new Promise<boolean>((resolve) => setReviewing({ ...request, resolve })),
+    review: (request) =>
+      new Promise<ReviewAnswer>((resolve) => {
+        setKeepCopy(false);
+        setReviewing({ ...request, resolve });
+      }),
     reviewMarks: () =>
       new Promise<{ marks: RedactMark[]; log: boolean; keep: RedactKeep } | null>((resolve) => {
         setWantLog(false);
@@ -466,7 +520,45 @@ export function App() {
     const current = docRef.current;
     if (!current) return;
     const name = `${safeFileName(`${baseName(current.name)} (as signed by ${check.name ?? 'the signer'})`)}.pdf`;
-    void unlessUnsaved(() => handleResult({ ok: true, file: { path: current.path, name, bytes: current.bytes.slice(0, check.signedLength) } }));
+    void unlessUnsaved(() => handleResult({ ok: true, file: { path: current.path, name, bytes: current.bytes.slice(0, check.signedLength) } }, { fromVault: current.fromVault }));
+  };
+
+  /**
+   * What the Archive stores for a PDF: read here, in the sandboxed window (asking for its password if
+   * it has one), for its page count, title and a picture of its first page. The PDF is stored as it is.
+   */
+  async function vaultItem(file: OpenedFile): Promise<NewDocument | null> {
+    try {
+      const { pdf } = await loadDocument(file.bytes, askPassword(file.name));
+      try {
+        const meta = (await pdf.getMetadata().catch(() => null)) as { info?: { Title?: unknown } } | null;
+        const title = typeof meta?.info?.Title === 'string' && meta.info.Title.trim() ? meta.info.Title.trim() : baseName(file.name);
+        return { fileName: file.name, title, pages: pdf.numPages, bytes: file.bytes, thumbnail: await firstPagePicture(pdf) };
+      } finally {
+        void pdf.loadingTask.destroy();
+      }
+    } catch (error) {
+      if (!(error instanceof OpenError && error.kind === 'cancelled')) setMessage(`${file.name} couldn't be added: the file may be damaged, or it may not really be a PDF.`);
+      return null;
+    } finally {
+      setPassword(null);
+    }
+  }
+
+  const openFromVault = (item: VaultDocument, bytes: Uint8Array) =>
+    void unlessUnsaved(() => handleResult({ ok: true, file: { path: '', name: item.fileName, bytes } }, { fromVault: true }));
+
+  /** The open file, for "Add the open file" on the Archive screen. */
+  const openFileItem = async (): Promise<NewDocument | null> => {
+    const current = docRef.current;
+    if (!current) return null;
+    return {
+      fileName: current.name,
+      title: report?.details.shown.title || baseName(current.name),
+      pages: current.pdf.numPages,
+      bytes: current.bytes,
+      thumbnail: await firstPagePicture(current.pdf),
+    };
   };
 
   const trustSigner = async (check: SignatureCheck) => {
@@ -491,6 +583,7 @@ export function App() {
     { id: 'details', label: 'Details', icon: 'details', disabled: !doc },
     { id: 'cleanup', label: 'Clean up', icon: 'clean', disabled: !doc },
     { id: 'sign', label: 'Sign', icon: 'seal', disabled: !doc },
+    { id: 'archive', label: 'Archive', icon: 'archive' },
     { id: 'settings', label: 'Settings', icon: 'settings' },
     { id: 'help', label: 'Help', icon: 'help' },
     { id: 'about', label: 'About', icon: 'about' },
@@ -651,6 +744,18 @@ export function App() {
             onTrust={(check) => void trustSigner(check)}
             onUntrust={(cert) => void untrust(cert)}
             onMakeCertificate={() => setMaking('screen')}
+          />
+        )}
+        {screen === 'archive' && (
+          <Archive
+            lockSignal={lockSignal}
+            openName={doc && !doc.fromVault ? doc.name : null}
+            onAddOpen={openFileItem}
+            describe={vaultItem}
+            onOpen={openFromVault}
+            onMessage={setMessage}
+            confirm={confirm}
+            onStatus={setVault}
           />
         )}
         {screen === 'settings' && (
@@ -820,6 +925,12 @@ export function App() {
             <p className="sf-muted">Besides what's on its pages:</p>
             <CarriesList carries={reviewing.carries} />
           </div>
+          {reviewing.archiveOffer && (
+            <label className="sf-choice">
+              <input type="checkbox" checked={keepCopy} onChange={(e) => setKeepCopy(e.target.checked)} />
+              <span>Also keep a copy in the Archive</span>
+            </label>
+          )}
           <p className="sf-muted">You can stop showing this before saving in Settings.</p>
           <div className="sf-dialog-buttons">
             <button
@@ -836,7 +947,7 @@ export function App() {
               type="button"
               className="sf-button sf-primary"
               onClick={() => {
-                reviewing.resolve(true);
+                reviewing.resolve({ archive: keepCopy });
                 setReviewing(null);
               }}
             >

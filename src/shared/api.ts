@@ -1,5 +1,6 @@
 import type { CertificateSummary, TrustAnchor } from '../engine/sign/types';
 import type { RedactionDpi, Settings, TextSize } from './settings';
+import type { HistoryCheck, NewDocument, VaultDocument, VaultLockMinutes, VaultReply, VaultStatus } from './vault';
 import type { ThemeId } from './themes';
 
 /** A file the main process read for the screens. */
@@ -34,6 +35,7 @@ export type SettingsChange = Partial<{
   authorName: string;
   reviewBeforeSave: boolean;
   redactionDpi: RedactionDpi;
+  vaultLockMinutes: VaultLockMinutes;
 }>;
 
 export interface SaveRequest {
@@ -105,6 +107,7 @@ export type MenuCommand =
   | 'show-details'
   | 'show-cleanup'
   | 'show-sign'
+  | 'show-archive'
   | 'show-settings'
   | 'show-about'
   | 'show-help';
@@ -146,6 +149,40 @@ export interface ScribeForgeApi {
   untrustCertificate(der: string): Promise<TrustList>;
   /** Makes a certificate in the person's name and saves it where they choose. */
   makeCertificate(request: MakeCertificateRequest): Promise<MakeCertificateResult>;
+
+  // The Archive's vault (docs/Plan_Phase3.md). Passwords and recovery codes are never saved.
+  vaultStatus(): Promise<VaultStatus>;
+  /** Makes the vault and leaves it unlocked; the recovery code, if asked for (shown once). */
+  vaultCreate(password: string, withRecoveryCode: boolean): Promise<VaultReply<string | null>>;
+  vaultUnlock(secret: string, kind: 'password' | 'recovery'): Promise<VaultReply<boolean>>;
+  vaultLock(): void;
+  /** The person is using ScribeForge: the vault's idle time starts again. */
+  vaultActive(): void;
+  vaultDocuments(): Promise<VaultReply<VaultDocument[]>>;
+  vaultThumbnail(id: string): Promise<VaultReply<Uint8Array | null>>;
+  /** Choose PDFs to add (read, not added to the recent files). */
+  vaultChooseFiles(): Promise<OpenResult[]>;
+  vaultAdd(items: NewDocument[]): Promise<VaultReply<VaultDocument[]>>;
+  /** A stored document's PDF, decrypted into memory. */
+  vaultOpen(id: string): Promise<VaultReply<{ name: string; title: string; bytes: Uint8Array }>>;
+  vaultUpdate(id: string, change: { title?: string; labels?: string[]; note?: string }): Promise<VaultReply<VaultDocument>>;
+  vaultVoid(id: string, reason: string): Promise<VaultReply<VaultDocument>>;
+  vaultRestoreDocument(id: string): Promise<VaultReply<VaultDocument>>;
+  vaultErase(id: string, reason: string): Promise<VaultReply<void>>;
+  vaultSaveCopy(id: string): Promise<SaveResult>;
+  vaultHistory(): Promise<VaultReply<HistoryCheck>>;
+  /** Saves text (the history) where the person chooses. */
+  vaultSaveText(suggestedName: string, text: string): Promise<SaveResult>;
+  vaultChangePassword(current: string, next: string): Promise<VaultReply<void>>;
+  /** Makes a new recovery code (the password is asked for first); the old one stops working. */
+  vaultRecoveryCode(password: string): Promise<VaultReply<string>>;
+  vaultBackup(): Promise<SaveResult>;
+  vaultChooseBackup(): Promise<{ ok: true; name: string } | { ok: false; message?: string }>;
+  /** Checks the chosen backup with its password or recovery code, and with `restore`, replaces the vault with it. */
+  vaultRestoreBackup(secret: string, kind: 'password' | 'recovery', restore: boolean): Promise<VaultReply<{ created: string; documents: number }>>;
+  vaultForgetBackup(): void;
+  /** Called when the vault locks: idle, Windows locked, sleep or the Lock button. */
+  onVaultLocked(listener: (why: string) => void): () => void;
 }
 
 /** Largest file ScribeForge will open. */

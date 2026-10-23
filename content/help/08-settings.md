@@ -9,7 +9,8 @@ Changes in **Settings** apply straight away and are saved on this computer.
 | Your name on annotations | Shown by other readers as the author of your highlights, notes and text boxes. Leave it empty to add no name. |
 | Before saving, show what the new file carries | On by default. See [Saving and your original files](07-saving.md). |
 | Image quality of redacted pages | 150, 200 (the default) or 300 dots per inch. See [Redacting](06-redacting.md). |
-| Remember the files I open | Keeps the **Recent files** list on Start. Turning it off also clears the list. |
+| Lock the Archive after | 5, 10 (the default), 15 or 30 minutes, or 1 hour, without using ScribeForge. See [The Archive](15-archive.md). |
+| Remember the files I open | Keeps the **Recent files** list on Start, and where your certificate file for signing is. Turning it off also clears both. |
 
 ## Where settings are kept
 

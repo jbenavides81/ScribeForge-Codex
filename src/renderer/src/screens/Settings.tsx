@@ -2,6 +2,7 @@ import { useEffect, useState, type CSSProperties } from 'react';
 import type { SettingsChange } from '../../../shared/api';
 import { MAX_AUTHOR_NAME, REDACTION_DPIS, type Settings as AppSettings, type TextSize } from '../../../shared/settings';
 import { cssVariables, presetFor, THEME_CHOICES, type ThemeId } from '../../../shared/themes';
+import { VAULT_LOCK_MINUTES, type VaultLockMinutes } from '../../../shared/vault';
 
 const TEXT_SIZES: { id: TextSize; name: string }[] = [
   { id: 'standard', name: 'Standard' },
@@ -144,6 +145,23 @@ export function Settings({
 
       <fieldset className="sf-section">
         <legend>
+          <h2>Archive</h2>
+        </legend>
+        <label className="sf-field sf-field-narrow">
+          <span>Lock the Archive after this long without using ScribeForge</span>
+          <select value={settings.vaultLockMinutes} onChange={(e) => onChange({ vaultLockMinutes: Number(e.target.value) as VaultLockMinutes })}>
+            {VAULT_LOCK_MINUTES.map((m) => (
+              <option key={m} value={m}>
+                {m === 60 ? '1 hour' : `${m} minutes`}
+              </option>
+            ))}
+          </select>
+        </label>
+        <p className="sf-muted">It also locks when ScribeForge starts, when Windows locks and when the PC goes to sleep.</p>
+      </fieldset>
+
+      <fieldset className="sf-section">
+        <legend>
           <h2>Recent files</h2>
         </legend>
         <label className="sf-choice">
@@ -154,7 +172,7 @@ export function Settings({
           />
           Remember the files I open
         </label>
-        <p className="sf-muted">File names can be private. Turning this off also clears the list.</p>
+        <p className="sf-muted">File names can be private. Turning this off also clears the list, and where your certificate file for signing is.</p>
         <button type="button" className="sf-button" onClick={onClearRecent} disabled={settings.recentFiles.length === 0}>
           Clear the list now
         </button>

@@ -20,9 +20,11 @@ describe('validateSettings', () => {
       redactionDpi: 300,
       certificateFile: 'C:\\me.pfx',
       trustedCertificates: ['MIIBAA=='],
+      vaultLockMinutes: 30,
     };
     const { settings, problems } = validateSettings(input);
     expect(problems).toEqual([]);
+    expect(validateSettings({ vaultLockMinutes: 7 }).problems).toEqual(['vaultLockMinutes']);
     expect(settings).toEqual(input);
   });
 

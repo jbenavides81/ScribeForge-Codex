@@ -1,4 +1,5 @@
 import type { ThemeId } from './themes';
+import { VAULT_LOCK_MINUTES, type VaultLockMinutes } from './vault';
 
 export type TextSize = 'standard' | 'large' | 'larger';
 /** How sharp redacted pages are, in dots per inch (Phase 0 plan, question 4). */
@@ -20,6 +21,8 @@ export interface Settings {
   certificateFile: string;
   /** Certificates the person chose to trust when checking signatures (DER, base64; nothing secret). */
   trustedCertificates: string[];
+  /** The Archive locks after this many minutes without using ScribeForge. */
+  vaultLockMinutes: VaultLockMinutes;
 }
 
 export const MAX_RECENT = 10;
@@ -37,6 +40,7 @@ export const DEFAULT_SETTINGS: Settings = {
   redactionDpi: 200,
   certificateFile: '',
   trustedCertificates: [],
+  vaultLockMinutes: 10,
 };
 
 const THEMES: readonly ThemeId[] = ['cathedral', 'light', 'dark', 'high-contrast', 'system'];
@@ -98,6 +102,10 @@ export function validateSettings(raw: unknown): { settings: Settings; problems: 
       settings.trustedCertificates = [...new Set(list)].slice(0, MAX_TRUSTED);
     } else problems.push('trustedCertificates');
   }
+  if (r.vaultLockMinutes !== undefined) {
+    if (VAULT_LOCK_MINUTES.includes(r.vaultLockMinutes as VaultLockMinutes)) settings.vaultLockMinutes = r.vaultLockMinutes as VaultLockMinutes;
+    else problems.push('vaultLockMinutes');
+  }
   if (!settings.rememberRecent) {
     settings.recentFiles = [];
     settings.certificateFile = '';
@@ -138,7 +146,7 @@ export function removeRecent(list: readonly string[], path: string): string[] {
 export function applyChange(current: Settings, change: Partial<Omit<Settings, 'version' | 'recentFiles' | 'certificateFile' | 'trustedCertificates'>>): Settings {
   // Only what the Settings screen changes: the recent files, the certificate file and the trusted
   // certificates have their own requests (and trusting one asks first).
-  const allowed = ['theme', 'textSize', 'rememberRecent', 'authorName', 'reviewBeforeSave', 'redactionDpi'] as const;
+  const allowed = ['theme', 'textSize', 'rememberRecent', 'authorName', 'reviewBeforeSave', 'redactionDpi', 'vaultLockMinutes'] as const;
   const picked = Object.fromEntries(allowed.filter((k) => change[k] !== undefined).map((k) => [k, change[k]]));
   const { settings } = validateSettings({ ...current, ...picked });
   return settings;

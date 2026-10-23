@@ -733,3 +733,23 @@ input[type='checkbox']:checked::before {
 .sf-sign-drag { position: absolute; outline: 2px dashed var(--sf-accent); }
 .sf-placing-banner { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
 .sf-choice-column { display: flex; flex-direction: column; align-items: flex-start; }
+
+/* Archive: the vault's documents, the selected one, and its history. */
+.sf-vault-form { max-width: 32rem; }
+.sf-vault-buttons { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; margin-top: 0.75rem; }
+.sf-vault-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 1rem; margin-top: 1rem; }
+.sf-vault-filters .sf-field { margin: 0; }
+.sf-vault-body { display: grid; grid-template-columns: minmax(16rem, 1fr) minmax(18rem, 26rem); gap: 1.5rem; align-items: start; margin-top: 1rem; }
+.sf-vault-list { margin: 0; padding: 0; list-style: none; }
+.sf-vault-item { display: flex; align-items: center; gap: 0.75rem; width: 100%; padding: 0.5rem; border: 1px solid transparent; border-radius: 6px; background: none; color: var(--sf-text); text-align: left; cursor: pointer; }
+.sf-vault-item:hover { background: var(--sf-raised); }
+.sf-vault-item[aria-current='true'] { border-color: var(--sf-accent); background: var(--sf-raised); }
+.sf-vault-item-text { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; overflow-wrap: anywhere; }
+.sf-vault-labels { color: var(--sf-link); }
+.sf-vault-thumb { flex: none; width: 48px; height: 62px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--sf-line); background: var(--sf-page-back); }
+.sf-vault-thumb img { max-width: 100%; max-height: 100%; }
+.sf-vault-panel { padding: 0.75rem 1rem; background: var(--sf-panel); border: 1px solid var(--sf-line); border-radius: 6px; }
+.sf-vault-panel textarea { width: 100%; }
+.sf-vault-history { padding-left: 2.5rem; }
+.sf-vault-history li { margin: 0.25rem 0; overflow-wrap: anywhere; }
+.sf-recovery-code { margin: 1rem 0; padding: 0.75rem; text-align: center; font-size: 1.25rem; font-weight: 600; letter-spacing: 0.08em; border: 1px solid var(--sf-outline); border-radius: 6px; }

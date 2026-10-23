@@ -15,6 +15,7 @@ import { APP_ORIGIN, blockNetwork, registerAppScheme, serveApp } from './network
 import { isTestWindow, placeAndShow } from './placement';
 import { SettingsStore } from './settingsStore';
 import { registerSigning } from './signing';
+import { registerArchive } from './archive';
 
 const here = import.meta.dirname;
 const rendererDir = path.join(here, '../renderer');
@@ -126,6 +127,7 @@ function registerHandlers(): void {
     return true;
   });
   registerSigning(win, store);
+  registerArchive(win, store, path.join(dataDir(), 'Vault'));
 }
 
 // Started with a command (scribeforge merge ...): run it and exit, without the app's window.
