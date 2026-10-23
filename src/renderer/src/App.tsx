@@ -14,8 +14,8 @@ import { Icon, type IconName } from './components/Icon';
 import { editReducer, emptyEdit, hasChanges, newKey, type Tile } from './pages/editState';
 import { PagesView } from './pages/PagesView';
 import { checkDocumentSignatures, emptySignatureBoxes, inspectDocument } from './pages/engineClient';
-import { useSaving, type NewFileReason, type ReviewAnswer, type ReviewRequest, type SignChoices } from './pages/saving';
-import type { NewDocument, VaultDocument, VaultStatus } from '../../shared/vault';
+import { useSaving, type ArchiveChoice, type NewFileReason, type ReviewAnswer, type ReviewRequest, type SignChoices } from './pages/saving';
+import type { NewDocument, VaultDocument, VaultStatus, VaultVersion } from '../../shared/vault';
 import { pageTexts } from './archive/text';
 import { firstPagePicture } from './archive/thumbnail';
 import { Archive } from './screens/Archive';
@@ -49,6 +49,8 @@ interface OpenDocument {
   permissions: number[] | null;
   /** Opened from the Archive: it's decrypted, so it closes when the vault locks. */
   fromVault?: boolean;
+  /** The Archive document it came from, so saving can add a new version of it (stop 3c). */
+  vaultDoc?: { id: string; title: string };
   /** The page to show first (a search result). */
   startPage?: number;
 }
@@ -120,7 +122,7 @@ export function App() {
   const [cleanChoices, setCleanChoices] = useState<CleanOptions>({});
   const [reviewing, setReviewing] = useState<(ReviewRequest & { resolve: (answer: ReviewAnswer) => void }) | null>(null);
   /** "Also keep a copy in the Archive", in the list shown before saving. */
-  const [keepCopy, setKeepCopy] = useState(false);
+  const [keepCopy, setKeepCopy] = useState<ArchiveChoice>('none');
   /** Whether the Archive is unlocked, and a signal each time it locks. */
   const [vault, setVault] = useState<VaultStatus | null>(null);
   const [lockSignal, setLockSignal] = useState<{ seq: number; why: string } | null>(null);
@@ -266,7 +268,7 @@ export function App() {
     release([current?.pdf, ...extra.map((s) => s.pdf)]);
   }, []);
 
-  const handleResult = useCallback(async (result: OpenResult, options: { fromVault?: boolean; startPage?: number } = {}) => {
+  const handleResult = useCallback(async (result: OpenResult, options: { fromVault?: boolean; vaultDoc?: { id: string; title: string }; startPage?: number } = {}) => {
     setRecent(await api.recentFiles());
     if (!result.ok) {
       if (result.reason !== 'cancelled') setMessage(openFailureMessage(result));
@@ -280,7 +282,7 @@ export function App() {
       const previous = docRef.current;
       const extra = addedRef.current;
       const id = ++nextDocId.current;
-      setDoc({ id, pdf, name: file.name, path: file.path, bytes: file.bytes, password: used, permissions, fromVault: options.fromVault, startPage: options.startPage });
+      setDoc({ id, pdf, name: file.name, path: file.path, bytes: file.bytes, password: used, permissions, fromVault: options.fromVault, vaultDoc: options.vaultDoc, startPage: options.startPage });
       setAdded([]);
       dispatch({ type: 'reset', tiles: pageTiles(`doc${id}`, pdf.numPages) });
       annotDispatch({ type: 'reset' });
@@ -468,16 +470,24 @@ export function App() {
     redactionDpi: settings?.redactionDpi ?? 200,
     signed: report ? report.carries.signatures.filter((s) => s.signed).length : null,
     archiveOpen: vault?.unlocked === true,
-    keepInArchive: async (path, bytes) => {
+    versionOf: doc?.vaultDoc?.title ?? null,
+    keepInArchive: async (path, bytes, choice) => {
       const name = path.split(/[\\/]/).pop() ?? 'document.pdf';
       const item = await vaultItem({ path, name, bytes });
+      const of = docRef.current?.vaultDoc;
+      if (choice === 'version' && of) {
+        const version = item ? await api.vaultAddVersion(of.id, item) : null;
+        return version?.ok
+          ? `\nIt's also in the Archive, as version ${version.value.number} of “${of.title}”.`
+          : `\nThe new version for the Archive couldn't be kept${version && !version.ok ? `: ${version.message}` : '.'}`;
+      }
       const added = item ? await api.vaultAdd([item]) : null;
       return added?.ok ? '\nA copy is also in the Archive.' : `\nThe copy for the Archive couldn't be kept${added && !added.ok ? `: ${added.message}` : '.'}`;
     },
     confirm,
     review: (request) =>
       new Promise<ReviewAnswer>((resolve) => {
-        setKeepCopy(false);
+        setKeepCopy('none');
         setReviewing({ ...request, resolve });
       }),
     reviewMarks: () =>
@@ -549,7 +559,24 @@ export function App() {
   }
 
   const openFromVault = (item: VaultDocument, bytes: Uint8Array, page?: number) =>
-    void unlessUnsaved(() => handleResult({ ok: true, file: { path: '', name: item.fileName, bytes } }, { fromVault: true, startPage: page }));
+    void unlessUnsaved(() => handleResult({ ok: true, file: { path: '', name: item.fileName, bytes } }, { fromVault: true, vaultDoc: { id: item.id, title: item.title }, startPage: page }));
+
+  /** Opens one version of a stored document; its name says which version it is. */
+  const openVersionFromVault = (item: VaultDocument, version: VaultVersion, bytes: Uint8Array) => {
+    const name = `${safeFileName(`${baseName(version.fileName)} (version ${version.number})`)}.pdf`;
+    void unlessUnsaved(() => handleResult({ ok: true, file: { path: '', name, bytes } }, { fromVault: true, vaultDoc: { id: item.id, title: item.title } }));
+  };
+
+  /** Opens a stored version with pdf.js for comparing (asking for its password if it has one). */
+  const readVaultPdf = useCallback(async (bytes: Uint8Array, name: string): Promise<PdfDocument | null> => {
+    try {
+      return (await loadDocument(bytes, askPassword(name))).pdf;
+    } catch {
+      return null;
+    } finally {
+      setPassword(null);
+    }
+  }, []);
 
   /** A stored document's page text, for the search index (asking for its password if it has one). Null if it can't be read. */
   const vaultTexts = async (item: VaultDocument): Promise<string[] | null> => {
@@ -777,6 +804,8 @@ export function App() {
             describe={vaultItem}
             readTexts={vaultTexts}
             onOpen={openFromVault}
+            onOpenVersion={openVersionFromVault}
+            readPdf={readVaultPdf}
             onMessage={setMessage}
             confirm={confirm}
             onStatus={setVault}
@@ -949,11 +978,28 @@ export function App() {
             <p className="sf-muted">Besides what's on its pages:</p>
             <CarriesList carries={reviewing.carries} />
           </div>
-          {reviewing.archiveOffer && (
+          {reviewing.archiveOffer && !reviewing.versionOf && (
             <label className="sf-choice">
-              <input type="checkbox" checked={keepCopy} onChange={(e) => setKeepCopy(e.target.checked)} />
+              <input type="checkbox" checked={keepCopy === 'copy'} onChange={(e) => setKeepCopy(e.target.checked ? 'copy' : 'none')} />
               <span>Also keep a copy in the Archive</span>
             </label>
+          )}
+          {reviewing.archiveOffer && reviewing.versionOf && (
+            <fieldset className="sf-split-choices" data-testid="review-archive">
+              <legend className="sf-strong">The Archive</legend>
+              {(
+                [
+                  ['none', "Don't keep it in the Archive"],
+                  ['version', `Save as a new version of “${reviewing.versionOf}”`],
+                  ['copy', 'Keep a copy in the Archive, as a separate document'],
+                ] as const
+              ).map(([choice, text]) => (
+                <label key={choice} className="sf-choice">
+                  <input type="radio" name="review-archive" checked={keepCopy === choice} onChange={() => setKeepCopy(choice)} />
+                  <span>{text}</span>
+                </label>
+              ))}
+            </fieldset>
           )}
           <p className="sf-muted">You can stop showing this before saving in Settings.</p>
           <div className="sf-dialog-buttons">

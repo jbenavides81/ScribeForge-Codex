@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { OpenedFile } from '../../../shared/api';
-import { MIN_VAULT_PASSWORD, type HistoryCheck, type NewDocument, type SearchResult, type TextlessDocument, type VaultDocument, type VaultStatus } from '../../../shared/vault';
+import { MIN_VAULT_PASSWORD, type HistoryCheck, type NewDocument, type SearchResult, type TextlessDocument, type VaultDocument, type VaultStatus, type VaultVersion } from '../../../shared/vault';
+import { CompareView } from '../archive/CompareView';
 import { historyFile, historyState, historyText, lockedBecause } from '../archive/describe';
 import { ChangePasswordDialog, NewRecoveryCodeDialog, ReasonDialog, RecoveryCodeDialog, RestoreBackupDialog } from '../archive/VaultDialogs';
 import { Icon } from '../components/Icon';
 import { formatDate, sizeText } from '../details/describe';
 import type { ConfirmRequest } from '../pages/sources';
+import type { PdfDocument } from '../viewer/pdfjs';
 import { plural } from '../words';
 
 const api = window.scribeforge;
@@ -54,27 +56,86 @@ const SINCE: { id: string; label: string; days?: number }[] = [
   { id: '365', label: 'In the last 12 months', days: 365 },
 ];
 
-/** The selected document: its title, labels and note (saved as they're changed), and what can be done with it. */
+/** A version's note, saved when it's changed. */
+function VersionNote({ version, onSave }: { version: VaultVersion; onSave: (note: string) => void }) {
+  const [note, setNote] = useState(version.note);
+  return (
+    <input
+      type="text"
+      className="sf-version-note"
+      aria-label={`Note on version ${version.number}`}
+      placeholder="A note about this version"
+      maxLength={5000}
+      value={note}
+      onChange={(e) => setNote(e.target.value)}
+      onBlur={() => note !== version.note && onSave(note)}
+    />
+  );
+}
+
+/** The selected document: its title, labels and note (saved as they're changed), its versions, and what can be done with it. */
 function DocumentPanel({
   doc,
+  openName,
+  busy,
   onChange,
   onOpen,
   onSaveCopy,
   onVoid,
   onRestore,
   onErase,
+  onOpenVersion,
+  onAddVersion,
+  onAddOpenVersion,
+  onCompare,
+  onVersionNote,
+  onFailed,
 }: {
   doc: VaultDocument;
+  /** The open document's name, when it isn't from the Archive. */
+  openName: string | null;
+  busy: boolean;
   onChange: (change: { title?: string; labels?: string[]; note?: string }) => void;
   onOpen: () => void;
   onSaveCopy: () => void;
   onVoid: () => void;
   onRestore: () => void;
   onErase: () => void;
+  onOpenVersion: (version: VaultVersion) => void;
+  onAddVersion: () => void;
+  onAddOpenVersion: () => void;
+  onCompare: (first: VaultVersion, second: VaultVersion) => void;
+  onVersionNote: (version: VaultVersion, note: string) => Promise<void>;
+  onFailed: (message: string, locked: boolean) => void;
 }) {
   const [title, setTitle] = useState(doc.title);
   const [labels, setLabels] = useState(doc.labels.join(', '));
   const [note, setNote] = useState(doc.note);
+  const [versions, setVersions] = useState<VaultVersion[] | null>(null);
+  const [reload, setReload] = useState(0);
+  const [first, setFirst] = useState('');
+  const [second, setSecond] = useState('');
+  useEffect(() => {
+    let current = true;
+    void api.vaultVersions(doc.id).then((r) => {
+      if (!current) return;
+      if (!r.ok) return onFailed(r.message, r.locked);
+      setVersions(r.value);
+      // Compare the newest with the one before it, unless other versions were chosen.
+      setFirst((f) => (r.value.some((v) => v.id === f) ? f : (r.value.at(-2)?.id ?? '')));
+      setSecond((s) => (r.value.some((v) => v.id === s) ? s : (r.value.at(-1)?.id ?? '')));
+    });
+    return () => {
+      current = false;
+    };
+  }, [doc.id, doc.versions, reload]);
+  const saveNote = async (version: VaultVersion, text: string) => {
+    await onVersionNote(version, text);
+    setReload((n) => n + 1);
+  };
+  const chosen = (id: string) => versions?.find((v) => v.id === id);
+  const firstVersion = chosen(first);
+  const secondVersion = chosen(second);
   const labelList = (text: string) => text.split(',').map((l) => l.trim()).filter(Boolean);
   return (
     <section className="sf-vault-panel" aria-label="Selected document" data-testid="vault-panel">
@@ -109,6 +170,8 @@ function DocumentPanel({
         <dd>{doc.pages || 'Not known'}</dd>
         <dt>Size</dt>
         <dd>{sizeText(doc.size)}</dd>
+        <dt>Versions</dt>
+        <dd>{doc.versions === 1 ? '1 (this is the only one)' : `${doc.versions} (the newest is the one opened and searched)`}</dd>
       </dl>
       <div className="sf-vault-buttons">
         <button type="button" className="sf-button sf-primary" onClick={onOpen}>
@@ -130,6 +193,70 @@ function DocumentPanel({
           Erase for good…
         </button>
       </div>
+      <section className="sf-vault-versions" aria-labelledby="vault-versions" data-testid="vault-versions">
+        <h2 id="vault-versions">Versions</h2>
+        {versions && (
+          <ol className="sf-version-list">
+            {[...versions].reverse().map((v) => (
+              <li key={v.id} data-testid="vault-version">
+                <span className="sf-version-line">
+                  <span className="sf-strong">Version {v.number}</span>
+                  <span className="sf-muted">
+                    {v.number === versions.length ? 'Newest · ' : ''}
+                    Added {formatDate(v.added)} · {plural(v.pages, 'page')} · {v.fileName}
+                  </span>
+                  <button type="button" className="sf-link-button" aria-label={`Open version ${v.number}`} onClick={() => onOpenVersion(v)}>
+                    Open
+                  </button>
+                </span>
+                <VersionNote key={v.note} version={v} onSave={(text) => void saveNote(v, text)} />
+              </li>
+            ))}
+          </ol>
+        )}
+        <div className="sf-vault-buttons">
+          <button type="button" className="sf-button" disabled={busy} onClick={onAddVersion}>
+            Add a new version…
+          </button>
+          {openName && (
+            <button type="button" className="sf-button" disabled={busy} onClick={onAddOpenVersion}>
+              Add the open file as a new version
+            </button>
+          )}
+        </div>
+        {versions && versions.length >= 2 && (
+          <div className="sf-compare-choose">
+            <label className="sf-field">
+              <span>Compare version</span>
+              <select value={first} onChange={(e) => setFirst(e.target.value)}>
+                {versions.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.number}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="sf-field">
+              <span>with version</span>
+              <select value={second} onChange={(e) => setSecond(e.target.value)}>
+                {versions.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.number}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              className="sf-button sf-primary"
+              disabled={!firstVersion || !secondVersion || first === second}
+              onClick={() => firstVersion && secondVersion && onCompare(firstVersion, secondVersion)}
+            >
+              Compare
+            </button>
+          </div>
+        )}
+      </section>
     </section>
   );
 }
@@ -146,6 +273,8 @@ export function Archive({
   describe,
   readTexts,
   onOpen,
+  onOpenVersion,
+  readPdf,
   onMessage,
   confirm,
   onStatus,
@@ -161,6 +290,10 @@ export function Archive({
   readTexts: (doc: VaultDocument) => Promise<string[] | null>;
   /** Opens a stored document, at a page when given. */
   onOpen: (doc: VaultDocument, bytes: Uint8Array, page?: number) => void;
+  /** Opens one version of a stored document. */
+  onOpenVersion: (doc: VaultDocument, version: VaultVersion, bytes: Uint8Array) => void;
+  /** Opens bytes with pdf.js (asking for a password if needed), for comparing versions. */
+  readPdf: (bytes: Uint8Array, name: string) => Promise<PdfDocument | null>;
   onMessage: (text: string) => void;
   confirm: (request: ConfirmRequest) => Promise<boolean>;
   onStatus: (status: VaultStatus) => void;
@@ -183,6 +316,7 @@ export function Archive({
   const [searched, setSearched] = useState<{ query: string; results: SearchResult[] } | null>(null);
   const [textless, setTextless] = useState<TextlessDocument[]>([]);
   const [indexing, setIndexing] = useState<{ done: number; total: number } | null>(null);
+  const [comparing, setComparing] = useState<{ doc: VaultDocument; first: VaultVersion; second: VaultVersion } | null>(null);
   /** Documents whose text couldn't be read this session (a password not given, or damaged): not asked for again. */
   const skipped = useRef(new Set<string>());
   const indexingNow = useRef(false);
@@ -220,6 +354,7 @@ export function Archive({
     setNote(lockedBecause(lockSignal.why));
     setSelected(null);
     setSearched(null);
+    setComparing(null);
     skipped.current.clear();
     void refresh();
   }, [lockSignal, refresh]);
@@ -351,6 +486,42 @@ export function Archive({
     const result = await api.vaultOpen(doc.id);
     if (!result.ok) return failed(result.message, result.locked);
     onOpen(doc, result.value.bytes, page);
+  };
+
+  const versionNote = async (version: VaultVersion, text: string) => {
+    const result = await api.vaultVersionNote(version.id, text);
+    if (!result.ok) return failed(result.message, result.locked);
+    await refresh();
+  };
+
+  const openVersion = async (doc: VaultDocument, version: VaultVersion) => {
+    const result = await api.vaultOpenVersion(doc.id, version.id);
+    if (!result.ok) return failed(result.message, result.locked);
+    onOpenVersion(doc, version, result.value.bytes);
+  };
+
+  /** Adds a new version of a document, from a chosen file or the open one. */
+  const addVersion = async (doc: VaultDocument, from: 'file' | 'open') => {
+    let item: NewDocument | null = null;
+    if (from === 'open') item = await onAddOpen();
+    else {
+      const [file] = await api.vaultChooseFiles('version');
+      if (!file) return;
+      if (!file.ok) {
+        if (file.reason !== 'cancelled') onMessage(`${file.path.split(/[\\/]/).pop()} couldn't be added: it couldn't be read as a PDF.`);
+        return;
+      }
+      setBusy('Reading the new version…');
+      item = await describe(file.file);
+      setBusy(null);
+    }
+    if (!item) return;
+    setBusy('Adding the new version…');
+    const result = await api.vaultAddVersion(doc.id, item);
+    setBusy(null);
+    if (!result.ok) return failed(result.message, result.locked);
+    onMessage(`Added version ${result.value.number} of “${doc.title}”.`);
+    await refresh();
   };
 
   const rebuild = async () => {
@@ -517,6 +688,14 @@ export function Archive({
     );
   }
 
+  if (comparing) {
+    return (
+      <div className="sf-screen sf-archive" data-testid="archive-screen">
+        <CompareView doc={comparing.doc} first={comparing.first} second={comparing.second} readPdf={readPdf} onBack={() => setComparing(null)} />
+      </div>
+    );
+  }
+
   return (
     <div className="sf-screen sf-archive" data-testid="archive-screen">
       <div className="sf-section-head">
@@ -673,7 +852,7 @@ export function Archive({
                 {shown.map((d) => (
                   <li key={d.id}>
                     <button type="button" className="sf-vault-item" aria-current={d.id === selected ? 'true' : undefined} onClick={() => setSelected(d.id)} onDoubleClick={() => void open(d)}>
-                      <Thumb id={d.id} />
+                      <Thumb key={d.versions} id={d.id} />
                       <span className="sf-vault-item-text">
                         <span className="sf-strong">{d.title}</span>
                         <span className="sf-muted">
@@ -690,6 +869,8 @@ export function Archive({
                 <DocumentPanel
                   key={current.id + current.title + current.labels.join() + current.note + String(current.voided?.at)}
                   doc={current}
+                  openName={openName}
+                  busy={busy !== null}
                   onChange={(c) => void change(current.id, c)}
                   onOpen={() => void open(current)}
                   onSaveCopy={() => void saveCopy(current)}
@@ -701,6 +882,12 @@ export function Archive({
                     })
                   }
                   onErase={() => setDialog('erase')}
+                  onOpenVersion={(v) => void openVersion(current, v)}
+                  onAddVersion={() => void addVersion(current, 'file')}
+                  onAddOpenVersion={() => void addVersion(current, 'open')}
+                  onCompare={(first, second) => setComparing({ doc: current, first, second })}
+                  onVersionNote={versionNote}
+                  onFailed={failed}
                 />
               )}
             </div>

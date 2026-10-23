@@ -28,9 +28,9 @@ import {
   VaultCryptoError,
   type KdfSettings,
 } from './crypto';
-import type { HistoryAction, HistoryCheck, HistoryEntry, NewDocument, SearchOptions, SearchResult, TextlessDocument, VaultDocument } from '../../shared/vault';
+import type { HistoryAction, HistoryCheck, HistoryEntry, NewDocument, NewVersion, SearchOptions, SearchResult, TextlessDocument, VaultDocument, VaultVersion } from '../../shared/vault';
 
-export type { HistoryAction, HistoryCheck, HistoryEntry, NewDocument, SearchOptions, SearchResult, TextlessDocument, VaultDocument };
+export type { HistoryAction, HistoryCheck, HistoryEntry, NewDocument, NewVersion, SearchOptions, SearchResult, TextlessDocument, VaultDocument, VaultVersion };
 
 export { MIN_VAULT_PASSWORD as MIN_PASSWORD } from '../../shared/vault';
 import { MIN_VAULT_PASSWORD as MIN_PASSWORD } from '../../shared/vault';
@@ -78,6 +78,8 @@ const MIGRATIONS = [
      details TEXT NOT NULL, seal TEXT NOT NULL);
    CREATE TRIGGER history_no_update BEFORE UPDATE ON history BEGIN SELECT RAISE(ABORT, 'The history can''t be changed.'); END;
    CREATE TRIGGER history_no_delete BEFORE DELETE ON history BEGIN SELECT RAISE(ABORT, 'The history can''t be changed.'); END;`,
+  // 2 (stop 3c): each version keeps the name of the file it came from.
+  `ALTER TABLE versions ADD COLUMN file_name TEXT NOT NULL DEFAULT '';`,
 ];
 
 /** The search index's tables: each page's text (full-text search, FTS5), and which documents are in it. */
@@ -550,11 +552,12 @@ export class Vault {
     const { db } = this.requireUnlocked();
     const rows = db
       .prepare(
-        `SELECT d.id, d.title, d.file_name, d.added, d.note, d.voided_at, d.void_reason, v.pages, v.size
+        `SELECT d.id, d.title, CASE WHEN v.file_name <> '' THEN v.file_name ELSE d.file_name END AS file_name, d.added, d.note, d.voided_at, d.void_reason, v.pages, v.size,
+                (SELECT count(*) FROM versions WHERE document = d.id) AS versions
          FROM documents d JOIN versions v ON v.id = (SELECT id FROM versions WHERE document = d.id ORDER BY added DESC, rowid DESC LIMIT 1)
          ORDER BY d.added DESC, d.rowid DESC`,
       )
-      .all() as { id: string; title: string; file_name: string; added: string; note: string; voided_at: string | null; void_reason: string | null; pages: number; size: number }[];
+      .all() as { id: string; title: string; file_name: string; added: string; note: string; voided_at: string | null; void_reason: string | null; pages: number; size: number; versions: number }[];
     const labels = db.prepare('SELECT document, label FROM labels ORDER BY label').all() as { document: string; label: string }[];
     return rows.map((r) => ({
       id: r.id,
@@ -566,6 +569,7 @@ export class Vault {
       labels: labels.filter((l) => l.document === r.id).map((l) => l.label),
       note: r.note,
       voided: r.voided_at ? { at: r.voided_at, reason: r.void_reason ?? '' } : null,
+      versions: r.versions,
     }));
   }
 
@@ -608,7 +612,7 @@ export class Vault {
     db.exec('BEGIN');
     try {
       db.prepare('INSERT INTO documents (id, title, file_name, added) VALUES (?, ?, ?, ?)').run(id, title, fileName, added);
-      db.prepare('INSERT INTO versions (id, document, added, file, size, pages, sha256, thumbnail) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(
+      db.prepare('INSERT INTO versions (id, document, added, file, size, pages, sha256, thumbnail, file_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run(
         randomUUID(),
         id,
         added,
@@ -617,6 +621,7 @@ export class Vault {
         pages,
         sha,
         thumbnail,
+        fileName,
       );
       this.record('added', id, title, {});
       db.exec('COMMIT');
@@ -642,10 +647,21 @@ export class Vault {
     return row;
   }
 
-  /** A stored document's PDF, decrypted into memory, and checked against the checksum it was stored with. */
+  /** A stored document's newest version, decrypted into memory, and checked against the checksum it was stored with. */
   read(id: string): Uint8Array {
+    return this.readStored(this.latestVersion(id));
+  }
+
+  /** One version of a document, decrypted and checked (stop 3c). */
+  readVersion(versionId: string): Uint8Array {
+    const { db } = this.requireUnlocked();
+    const row = db.prepare('SELECT file, sha256 FROM versions WHERE id = ?').get(versionId) as { file: string; sha256: string } | undefined;
+    if (!row) throw new VaultError('invalid', "That version isn't in the vault.");
+    return this.readStored(row);
+  }
+
+  private readStored(version: { file: string; sha256: string }): Uint8Array {
     const { key, info } = this.requireUnlocked();
-    const version = this.latestVersion(id);
     let bytes: Buffer;
     try {
       bytes = unseal(subkey(key, info.id, 'files'), `file:${version.file}`, readFileSync(this.filePath(version.file)));
@@ -656,6 +672,86 @@ export class Vault {
       throw new VaultError('damaged', "This document's file in the vault doesn't match what was stored, so it wasn't opened.");
     }
     return new Uint8Array(bytes);
+  }
+
+  /** A document's versions, oldest first, numbered from 1. */
+  versions(id: string): VaultVersion[] {
+    const { db } = this.requireUnlocked();
+    // Versions stored before 3c have no file name of their own: they're the document's first file.
+    const doc = db.prepare('SELECT file_name FROM documents WHERE id = ?').get(id) as { file_name: string } | undefined;
+    if (!doc) throw new VaultError('invalid', "That document isn't in the vault.");
+    const rows = db.prepare('SELECT id, added, pages, size, file_name, note FROM versions WHERE document = ? ORDER BY added, rowid').all(id) as {
+      id: string;
+      added: string;
+      pages: number;
+      size: number;
+      file_name: string;
+      note: string;
+    }[];
+    return rows.map((r, i) => ({ id: r.id, number: i + 1, added: r.added, pages: r.pages, size: r.size, fileName: r.file_name || doc.file_name, note: r.note }));
+  }
+
+  /**
+   * Stores a new version of a document (stop 3c). It becomes the one shown, opened and searched;
+   * every earlier version stays, and can still be opened and compared.
+   */
+  addVersion(id: string, doc: NewVersion): VaultVersion {
+    const { key, db, info } = this.requireUnlocked();
+    const current = this.document(id);
+    if (!(doc.bytes instanceof Uint8Array) || doc.bytes.length === 0) throw new VaultError('invalid', 'There is nothing to add.');
+    const fileName = clean(doc.fileName, LIMITS.fileName) || current.fileName;
+    const file = randomUUID();
+    const version = randomUUID();
+    writeSafely(this.filePath(file), seal(subkey(key, info.id, 'files'), `file:${file}`, doc.bytes));
+    const pages = Number.isInteger(doc.pages) && doc.pages > 0 ? doc.pages : 0;
+    const thumbnail = doc.thumbnail instanceof Uint8Array && doc.thumbnail.length < 512 * 1024 ? doc.thumbnail : null;
+    db.exec('BEGIN');
+    try {
+      db.prepare('INSERT INTO versions (id, document, added, file, size, pages, sha256, thumbnail, file_name, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(
+        version,
+        id,
+        this.now().toISOString(),
+        file,
+        doc.bytes.length,
+        pages,
+        createHash('sha256').update(doc.bytes).digest('hex'),
+        thumbnail,
+        fileName,
+        cleanNote(doc.note),
+      );
+      this.record('version-added', id, current.title, { version: String(current.versions + 1) });
+      db.exec('COMMIT');
+    } catch (error) {
+      db.exec('ROLLBACK');
+      rmSync(this.filePath(file), { force: true });
+      throw error;
+    }
+    this.save();
+    if (Array.isArray(doc.pageTexts)) {
+      this.indexPages(id, doc.pageTexts);
+    } else {
+      // The old version's words would be wrong now: leave it for catch-up indexing to read.
+      const index = this.requireIndex();
+      index.prepare('DELETE FROM pages WHERE document = ?').run(id);
+      index.prepare('DELETE FROM indexed WHERE document = ?').run(id);
+    }
+    this.saveIndex();
+    return this.versions(id).find((v) => v.id === version) as VaultVersion;
+  }
+
+  /** Changes a version's note (recorded in the history, without the note itself). */
+  versionNote(versionId: string, note: string): VaultVersion {
+    const { db } = this.requireUnlocked();
+    const row = db.prepare('SELECT document FROM versions WHERE id = ?').get(versionId) as { document: string } | undefined;
+    if (!row) throw new VaultError('invalid', "That version isn't in the vault.");
+    const version = this.versions(row.document).find((v) => v.id === versionId) as VaultVersion;
+    const text = cleanNote(note);
+    if (text !== version.note) {
+      db.prepare('UPDATE versions SET note = ? WHERE id = ?').run(text, versionId);
+      this.record('version-note', row.document, this.document(row.document).title, { version: String(version.number) });
+      this.save();
+    }
+    return { ...version, note: text };
   }
 
   thumbnail(id: string): Uint8Array | null {

@@ -39,3 +39,9 @@ export function pdfColour(hex: string): [number, number, number] {
  * marks show as see-through black with a red edge until they're applied.
  */
 export const REDACTION_COLOURS = { paper: '#FFFFFF', box: '#000000', outline: '#B71C1C' } as const;
+
+/**
+ * Comparing versions (stop 3c): the boxes around what changed, drawn over the page (paper white)
+ * in every theme. The edge has at least 4.5:1 contrast on white; the fill is see-through.
+ */
+export const COMPARE_COLOURS = { edge: '#B71C1C', fill: '#FF9C9C' } as const;

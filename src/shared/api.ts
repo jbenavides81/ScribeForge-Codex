@@ -1,6 +1,6 @@
 import type { CertificateSummary, TrustAnchor } from '../engine/sign/types';
 import type { RedactionDpi, Settings, TextSize } from './settings';
-import type { HistoryCheck, NewDocument, SearchOptions, SearchResult, TextlessDocument, VaultDocument, VaultLockMinutes, VaultReply, VaultStatus } from './vault';
+import type { HistoryCheck, NewDocument, NewVersion, SearchOptions, SearchResult, TextlessDocument, VaultDocument, VaultLockMinutes, VaultReply, VaultStatus, VaultVersion } from './vault';
 import type { ThemeId } from './themes';
 
 /** A file the main process read for the screens. */
@@ -160,8 +160,8 @@ export interface ScribeForgeApi {
   vaultActive(): void;
   vaultDocuments(): Promise<VaultReply<VaultDocument[]>>;
   vaultThumbnail(id: string): Promise<VaultReply<Uint8Array | null>>;
-  /** Choose PDFs to add (read, not added to the recent files). */
-  vaultChooseFiles(): Promise<OpenResult[]>;
+  /** Choose PDFs to add, or one for a new version (read, not added to the recent files). */
+  vaultChooseFiles(purpose?: 'add' | 'version'): Promise<OpenResult[]>;
   vaultAdd(items: NewDocument[]): Promise<VaultReply<VaultDocument[]>>;
   /** A stored document's PDF, decrypted into memory. */
   vaultOpen(id: string): Promise<VaultReply<{ name: string; title: string; bytes: Uint8Array }>>;
@@ -191,6 +191,13 @@ export interface ScribeForgeApi {
   vaultClearIndex(): Promise<VaultReply<void>>;
   /** Documents with pages that have no text (scans). */
   vaultTextless(): Promise<VaultReply<TextlessDocument[]>>;
+  /** A document's versions, oldest first (stop 3c). */
+  vaultVersions(id: string): Promise<VaultReply<VaultVersion[]>>;
+  /** Stores a new version of a document; it becomes the one shown, opened and searched. */
+  vaultAddVersion(id: string, item: NewVersion): Promise<VaultReply<VaultVersion>>;
+  /** One version's PDF, decrypted into memory and checked. */
+  vaultOpenVersion(id: string, versionId: string): Promise<VaultReply<{ name: string; title: string; number: number; bytes: Uint8Array }>>;
+  vaultVersionNote(versionId: string, note: string): Promise<VaultReply<VaultVersion>>;
   /** Called when the vault locks: idle, Windows locked, sleep or the Lock button. */
   onVaultLocked(listener: (why: string) => void): () => void;
 }

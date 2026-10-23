@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { MakeCertificateRequest, MenuCommand, SaveBesideRequest, SaveManyRequest, SaveRequest, ScribeForgeApi, SettingsChange } from '../shared/api';
-import type { NewDocument, SearchOptions } from '../shared/vault';
+import type { NewDocument, NewVersion, SearchOptions } from '../shared/vault';
 
 // The only things the screens can ask the rest of the app to do.
 const api: ScribeForgeApi = {
@@ -42,7 +42,7 @@ const api: ScribeForgeApi = {
   vaultActive: () => ipcRenderer.send('vault:active'),
   vaultDocuments: () => ipcRenderer.invoke('vault:documents'),
   vaultThumbnail: (id: string) => ipcRenderer.invoke('vault:thumbnail', id),
-  vaultChooseFiles: () => ipcRenderer.invoke('vault:choose-files'),
+  vaultChooseFiles: (purpose?: 'add' | 'version') => ipcRenderer.invoke('vault:choose-files', purpose ?? 'add'),
   vaultAdd: (items: NewDocument[]) => ipcRenderer.invoke('vault:add', items),
   vaultOpen: (id: string) => ipcRenderer.invoke('vault:open', id),
   vaultUpdate: (id: string, change: { title?: string; labels?: string[]; note?: string }) => ipcRenderer.invoke('vault:update', id, change),
@@ -63,6 +63,10 @@ const api: ScribeForgeApi = {
   vaultIndex: (entries: { id: string; pageTexts: string[] }[]) => ipcRenderer.invoke('vault:index', entries),
   vaultClearIndex: () => ipcRenderer.invoke('vault:clear-index'),
   vaultTextless: () => ipcRenderer.invoke('vault:textless'),
+  vaultVersions: (id: string) => ipcRenderer.invoke('vault:versions', id),
+  vaultAddVersion: (id: string, item: NewVersion) => ipcRenderer.invoke('vault:add-version', id, item),
+  vaultOpenVersion: (id: string, versionId: string) => ipcRenderer.invoke('vault:open-version', id, versionId),
+  vaultVersionNote: (versionId: string, note: string) => ipcRenderer.invoke('vault:version-note', versionId, note),
   onVaultLocked: (listener: (why: string) => void) => {
     const handler = (_event: unknown, why: string) => listener(why);
     ipcRenderer.on('vault:locked', handler);

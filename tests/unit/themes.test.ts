@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { REDACTION_COLOURS } from '../../src/shared/annotationColours';
+import { COMPARE_COLOURS, REDACTION_COLOURS } from '../../src/shared/annotationColours';
 import { contrastPairs, contrastRatio, cssVariables, PRESETS, presetFor, THEME_CHOICES } from '../../src/shared/themes';
 
 describe('contrast', () => {
@@ -34,6 +34,9 @@ describe('colours drawn on the page', () => {
   }
   it("a redaction mark's red edge stands out on the page (3:1)", () => {
     expect(contrastRatio(REDACTION_COLOURS.outline, REDACTION_COLOURS.paper)).toBeGreaterThanOrEqual(3);
+  });
+  it("comparing versions: the boxes around what changed stand out on the page (4.5:1)", () => {
+    expect(contrastRatio(COMPARE_COLOURS.edge, REDACTION_COLOURS.paper)).toBeGreaterThanOrEqual(4.5);
   });
 });
 

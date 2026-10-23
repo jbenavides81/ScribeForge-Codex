@@ -73,8 +73,8 @@ test('make the vault, add PDFs with labels and a note: nothing in the vault fold
   await item(win, 'CARRIES-OLD-TITLE').click();
   const panel = screen(win).getByTestId('vault-panel');
   await panel.getByLabel('Labels, separated with commas').fill('VAULT-LABEL-ONE, tax');
-  await panel.getByLabel('Note').click();
-  await panel.getByLabel('Note').fill('VAULT-NOTE-TEXT');
+  await panel.getByLabel('Note', { exact: true }).click();
+  await panel.getByLabel('Note', { exact: true }).fill('VAULT-NOTE-TEXT');
   await panel.getByLabel('Title').click();
   await expect(item(win, 'CARRIES-OLD-TITLE')).toContainText('VAULT-LABEL-ONE, tax');
   const labelFilter = screen(win).getByRole('combobox', { name: /^Label/ });
@@ -119,7 +119,7 @@ test('a document opened from the vault closes when the vault locks: Lock, Window
   await addFixtures(app, win, ['normal.pdf']);
   const reopen = async () => {
     await item(win, 'ScribeForge test document').click();
-    await screen(win).getByTestId('vault-panel').getByRole('button', { name: 'Open' }).click();
+    await screen(win).getByTestId('vault-panel').getByRole('button', { name: 'Open', exact: true }).click();
     await waitForFirstPage(win);
     await expect(win.locator('.sf-doc-name')).toHaveText('normal.pdf');
   };

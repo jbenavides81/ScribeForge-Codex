@@ -12,6 +12,10 @@ export function historyText(e: HistoryEntry): string {
       return e.details.recovery === 'yes' ? 'The vault was made, with a recovery code.' : 'The vault was made.';
     case 'added':
       return `${named(e)} was added.`;
+    case 'version-added':
+      return `Version ${e.details.version ?? ''} of ${named(e)} was added.`;
+    case 'version-note':
+      return `The note on version ${e.details.version ?? ''} of ${named(e)} was changed.`;
     case 'renamed':
       return `“${e.details.from ?? ''}” was renamed ${named(e)}.`;
     case 'labels':

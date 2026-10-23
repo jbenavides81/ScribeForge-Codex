@@ -15,6 +15,23 @@ export interface VaultDocument {
   labels: string[];
   note: string;
   voided: { at: string; reason: string } | null;
+  /** How many versions it has (stop 3c); the newest is the one shown and opened. */
+  versions: number;
+}
+
+/** A new version of a stored document: it keeps the document's title (stop 3c). */
+export type NewVersion = Omit<NewDocument, 'title'> & { note?: string };
+
+/** One version of a stored document (stop 3c). */
+export interface VaultVersion {
+  id: string;
+  /** 1 for the first, counting up. */
+  number: number;
+  added: string;
+  pages: number;
+  size: number;
+  fileName: string;
+  note: string;
 }
 
 export interface SearchHit {
@@ -62,6 +79,8 @@ export interface NewDocument {
 export type HistoryAction =
   | 'vault-made'
   | 'added'
+  | 'version-added'
+  | 'version-note'
   | 'renamed'
   | 'labels'
   | 'note'

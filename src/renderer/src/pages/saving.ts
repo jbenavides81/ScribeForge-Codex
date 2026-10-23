@@ -51,8 +51,11 @@ export interface SignChoices {
  */
 export type NewFileReason = 'changes' | 'password' | 'damaged' | null;
 
-/** The answer to the list shown before saving: don't save, or save (and also keep a copy in the Archive). */
-export type ReviewAnswer = false | { archive: boolean };
+/** Whether a new file also goes in the Archive: not at all, as a new document, or as a new version of the one it came from (stop 3c). */
+export type ArchiveChoice = 'none' | 'copy' | 'version';
+
+/** The answer to the list shown before saving: don't save, or save (and perhaps keep it in the Archive too). */
+export type ReviewAnswer = false | { archive: ArchiveChoice };
 
 /** Shown before saving, when Settings says so. */
 export interface ReviewRequest {
@@ -64,6 +67,8 @@ export interface ReviewRequest {
   title?: string;
   /** Offer "Also keep a copy in the Archive" (one new file, with the Archive unlocked). */
   archiveOffer?: boolean;
+  /** Also offer "Save as a new version of …": the title of the Archive document the open file came from. */
+  versionOf?: string;
 }
 
 export function useSaving({
@@ -78,6 +83,7 @@ export function useSaving({
   redactionDpi,
   signed: signedCount,
   archiveOpen,
+  versionOf,
   keepInArchive,
   confirm,
   review,
@@ -102,8 +108,10 @@ export function useSaving({
   signed: number | null;
   /** The Archive is unlocked, so a new file can also be kept in it. */
   archiveOpen: boolean;
-  /** Keeps a copy of a just-saved file in the Archive; a line for the message after saving. */
-  keepInArchive: (path: string, bytes: Uint8Array) => Promise<string>;
+  /** The title of the Archive document the open file came from, so a new file can be kept as a new version of it. */
+  versionOf: string | null;
+  /** Keeps a just-saved file in the Archive, as a new document or a new version; a line for the message after saving. */
+  keepInArchive: (path: string, bytes: Uint8Array, choice: 'copy' | 'version') => Promise<string>;
   confirm: (request: ConfirmRequest) => Promise<boolean>;
   review: (request: ReviewRequest) => Promise<ReviewAnswer>;
   /** Shows the redaction marks for checking. The marks left when the person goes on, or null. */
@@ -187,12 +195,13 @@ export function useSaving({
 
   /** Shows what the new files carry, when Settings says so. True to go on and save. */
   const reviewed = async (made: { name: string; bytes: Uint8Array }[], report: BuildReport, notes = buildNotes(report), title?: string): Promise<ReviewAnswer> => {
-    if (!reviewBeforeSave) return { archive: false };
+    if (!reviewBeforeSave) return { archive: 'none' };
     setWorking('Checking what the new file carries…');
     const carries: Carries[] = [];
     for (const file of made) carries.push((await inspectDocument({ id: file.name, name: file.name, bytes: file.bytes })).carries);
     setWorking(null);
-    return review({ carries: combineCarries(carries), files: made.length, notes, title, archiveOffer: archiveOpen && made.length === 1 });
+    const offer = archiveOpen && made.length === 1;
+    return review({ carries: combineCarries(carries), files: made.length, notes, title, archiveOffer: offer, versionOf: (offer && versionOf) || undefined });
   };
 
   const save = (tiles: Tile[], name: string, openAfter: boolean) =>
@@ -206,7 +215,7 @@ export function useSaving({
       setWorking('Saving…');
       const result = await api.saveFile({ bytes, suggestedName: name, sourcePaths: sources.map((s) => s.path) });
       if (result.ok) {
-        const archived = answer.archive ? await keepInArchive(result.path, bytes) : '';
+        const archived = answer.archive !== 'none' ? await keepInArchive(result.path, bytes, answer.archive) : '';
         if (openAfter) {
           setWorking('Opening the new file…');
           await onSaved(result.path);
@@ -289,12 +298,12 @@ export function useSaving({
       const { carries } = await inspectDocument({ id: name, name, bytes });
       setWorking(null);
       const lowest = Math.min(...Object.values(pages).map((p) => p.dpi));
-      const answer = await review({ carries, files: 1, notes: redactionNotes(report, used, marks.length - used, lowest, keep), title: 'What the redacted file carries', archiveOffer: archiveOpen });
+      const answer = await review({ carries, files: 1, notes: redactionNotes(report, used, marks.length - used, lowest, keep), title: 'What the redacted file carries', archiveOffer: archiveOpen, versionOf: (archiveOpen && versionOf) || undefined });
       if (!answer) return;
       setWorking('Saving…');
       const result = await api.saveFile({ bytes, suggestedName: name, sourcePaths: sources.map((s) => s.path) });
       if (result.ok) {
-        const archived = answer.archive ? await keepInArchive(result.path, bytes) : '';
+        const archived = answer.archive !== 'none' ? await keepInArchive(result.path, bytes, answer.archive) : '';
         // The log, if asked for: next to the redacted file, with hints instead of the marked text.
         let logged = '';
         if (log) {
@@ -337,7 +346,7 @@ export function useSaving({
       setWorking('Saving…');
       const result = await api.saveFile({ bytes, suggestedName: name, sourcePaths: sources.map((s) => s.path) });
       if (result.ok) {
-        const archived = answer.archive ? await keepInArchive(result.path, bytes) : '';
+        const archived = answer.archive !== 'none' ? await keepInArchive(result.path, bytes, answer.archive) : '';
         setWorking('Opening the new file…');
         await onSaved(result.path);
         onMessage(cleanedMessage(result.path, report) + archived);

@@ -10,7 +10,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { safeFileName } from '../engine/names';
 import type { OpenResult, SaveResult } from '../shared/api';
-import type { HistoryCheck, NewDocument, SearchOptions, VaultDocument, VaultReply, VaultStatus } from '../shared/vault';
+import type { HistoryCheck, NewDocument, NewVersion, SearchOptions, VaultDocument, VaultReply, VaultStatus, VaultVersion } from '../shared/vault';
 import { uniquePath, writeSafely } from './fileWrite';
 import { readPdf } from './files';
 import type { SettingsStore } from './settingsStore';
@@ -107,10 +107,11 @@ export function registerArchive(win: () => BrowserWindow, store: SettingsStore, 
   handle('vault:documents', (): VaultReply<VaultDocument[]> => reply(() => vault.documents()));
   handle('vault:thumbnail', (id: unknown) => reply(() => (typeof id === 'string' ? vault.thumbnail(id) : null)));
 
-  handle('vault:choose-files', async (): Promise<OpenResult[]> => {
+  handle('vault:choose-files', async (purpose: unknown): Promise<OpenResult[]> => {
+    const version = purpose === 'version';
     const result = await dialog.showOpenDialog(win(), {
-      title: 'Add PDFs to the Archive',
-      properties: ['openFile', 'multiSelections'],
+      title: version ? 'Choose the new version' : 'Add PDFs to the Archive',
+      properties: version ? ['openFile'] : ['openFile', 'multiSelections'],
       filters: [{ name: 'PDF files', extensions: ['pdf'] }],
     });
     if (result.canceled) return [];
@@ -133,6 +134,23 @@ export function registerArchive(win: () => BrowserWindow, store: SettingsStore, 
       return { name: doc.fileName, title: doc.title, bytes: vault.read(id) };
     }),
   );
+
+  handle('vault:versions', (id: unknown): VaultReply<VaultVersion[]> => reply(() => vault.versions(String(id))));
+  handle('vault:add-version', (id: unknown, item: unknown) =>
+    reply(() => {
+      if (typeof id !== 'string' || typeof item !== 'object' || item === null) throw new VaultError('invalid', 'There is nothing to add.');
+      return vault.addVersion(id, item as NewVersion);
+    }),
+  );
+  handle('vault:open-version', (id: unknown, versionId: unknown) =>
+    reply(() => {
+      const version = vault.versions(String(id)).find((v) => v.id === versionId);
+      if (!version) throw new VaultError('invalid', "That version isn't in the vault.");
+      const doc = vault.document(String(id));
+      return { name: version.fileName, title: doc.title, number: version.number, bytes: vault.readVersion(version.id) };
+    }),
+  );
+  handle('vault:version-note', (versionId: unknown, note: unknown) => reply(() => vault.versionNote(String(versionId), String(note ?? ''))));
 
   handle('vault:update', (id: unknown, change: unknown) =>
     reply(() => {

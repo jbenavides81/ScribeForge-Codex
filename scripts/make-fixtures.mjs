@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { registerHooks } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { PDFDict, PDFDocument, PDFHexString, PDFName, PDFString, StandardFonts } from '@cantoo/pdf-lib';
+import { PDFDict, PDFDocument, PDFHexString, PDFName, PDFString, rgb, StandardFonts } from '@cantoo/pdf-lib';
 
 const OUT = path.resolve('tests/fixtures/out');
 mkdirSync(OUT, { recursive: true });
@@ -485,6 +485,31 @@ async function noText() {
   return doc.save();
 }
 
+/**
+ * Versions and compare (stop 3c): two versions of one document, with each kind of change. Version 2
+ * adds a page (2), changes a word (3), swaps two blocks of text (4), changes a picture's colour (5),
+ * and leaves out version 1's last page. Page 1 is the same in both.
+ */
+async function version(n) {
+  const doc = await PDFDocument.create();
+  doc.setTitle('Tenancy agreement');
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const page = () => doc.addPage([612, 792]);
+  lines(page(), font, ['Tenancy agreement between the landlord and the tenant.', 'This page stays exactly the same in both versions.']);
+  if (n === 2) lines(page(), font, ['SUMMARY-ONLY-IN-VERSION-TWO', 'A short summary was added before the terms.', 'It lists the rent, the deposit and the dates.']);
+  lines(page(), font, ['Fees', `The fee is ${n === 1 ? 100 : 120} pounds.`, 'It is paid on the first day of each month.']);
+  const blocks = page();
+  lines(blocks, font, ['Terms']);
+  const [top, bottom] = n === 1 ? ['Block Alpha says hello to the reader.', 'Block Beta says goodbye to the reader.'] : ['Block Beta says goodbye to the reader.', 'Block Alpha says hello to the reader.'];
+  lines(blocks, font, [top], { top: 600 });
+  lines(blocks, font, [bottom], { top: 400 });
+  const picture = page();
+  lines(picture, font, ['Picture', 'The coloured panel below is the logo.']);
+  picture.drawRectangle({ x: 156, y: 300, width: 300, height: 200, color: n === 1 ? rgb(0.1, 0.3, 0.8) : rgb(0.85, 0.15, 0.1) });
+  if (n === 1) lines(page(), font, ['APPENDIX-ONLY-IN-VERSION-ONE', 'An appendix of meter readings, taken out later.', 'Gas 0412, electricity 7731, water 2290.']);
+  return doc.save();
+}
+
 const normalBytes = await normal();
 const files = {
   'normal.pdf': normalBytes,
@@ -501,6 +526,8 @@ const files = {
   'redaction.pdf': await redaction(),
   'patterns.pdf': await patterns(),
   'no-text.pdf': await noText(),
+  'version-1.pdf': await version(1),
+  'version-2.pdf': await version(2),
   // Cut off halfway through.
   'damaged-truncated.pdf': normalBytes.slice(0, Math.floor(normalBytes.length / 2)),
   // The cross-reference table's position points nowhere.
