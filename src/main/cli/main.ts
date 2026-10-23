@@ -12,6 +12,7 @@ import { APP_ORIGIN, blockedRequests, blockNetwork, registerAppScheme, serveApp 
 import { placeAndShow } from '../placement';
 import { parseCommand } from './args';
 import { CliError, EXIT, firstLineOf, runCommand, type CliIo } from './run';
+import { windowsRoots } from '../sign/windowsTrust';
 
 const here = import.meta.dirname;
 
@@ -197,6 +198,7 @@ export function runCli(words: string[], rendererDir: string, devServer: string |
         stdinLine: firstLine,
         askPassword: (fileName, retry) => askPassword(fileName, retry, devServer),
         render: (job) => render(job, devServer),
+        windowsTrust: windowsRoots,
       };
       code = await runCommand(parsed.command, io);
     }

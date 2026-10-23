@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import type { Carries } from '../../../engine/types';
 import { plural } from '../words';
-import { actionText, commentKinds, DETAIL_LABELS, detailValue, sizeText } from './describe';
+import { actionText, commentKinds, DETAIL_LABELS, detailValue, signaturesText, sizeText } from './describe';
 
 const SHOWN = 8;
 
@@ -61,6 +61,10 @@ export function CarriesList({ carries }: { carries: Carries }) {
         summary={c.formFields.length > 0 ? `${plural(c.formFields.length, 'field')}, ${filled} filled in` : 'None'}
       >
         <Items items={c.formFields.map((f) => `${f.name || 'Unnamed field'}${f.filled ? ' (filled in)' : ''}`)} />
+      </Row>
+      <Row id="signatures" label="Signatures" summary={signaturesText(c.signatures)}>
+        <Items items={c.signatures.map((f) => `${f.name || 'Unnamed signature'}${f.signed ? '' : ' (empty)'}`)} />
+        {c.signatures.some((f) => f.signed) && <p className="sf-muted">The Sign screen checks them. A new file made from this one won't be signed.</p>}
       </Row>
       <Row id="comments" label="Comments" summary={c.comments.total > 0 ? commentKinds(c.comments.kinds) : 'None'}>
         {c.comments.authors.length > 0 && <p>By {c.comments.authors.join(', ')}</p>}

@@ -1,7 +1,9 @@
 // Generates every test PDF into tests/fixtures/out/. No real documents are ever used.
 //   node scripts/make-fixtures.mjs
 import { mkdirSync, writeFileSync } from 'node:fs';
+import { registerHooks } from 'node:module';
 import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { PDFDict, PDFDocument, PDFHexString, PDFName, PDFString, StandardFonts } from '@cantoo/pdf-lib';
 
 const OUT = path.resolve('tests/fixtures/out');
@@ -496,5 +498,40 @@ const files = {
   'not-a-pdf.pdf': Buffer.from('This is a plain text file with a .pdf name.\n', 'utf8'),
 };
 
+// Signing (stop 2e): made-up certificates, and files signed with ScribeForge's own engine. The engine
+// is TypeScript, which Node runs as it is once relative imports may leave out ".ts".
+registerHooks({
+  resolve(specifier, context, next) {
+    if (/^\.\.?\//.test(specifier) && !/\.[cm]?[jt]sx?$/.test(specifier) && context.parentURL?.endsWith('.ts')) {
+      return next(`${specifier}.ts`, context);
+    }
+    return next(specifier, context);
+  },
+});
+const here = path.dirname(fileURLToPath(import.meta.url));
+const load = (file) => import(pathToFileURL(path.join(here, '..', file)).href);
+const signing = await load('tests/fixtures/signing.ts');
+const { certificateDer } = await load('src/engine/sign/certificate.ts');
+const { writePfx } = await load('src/main/sign/pfx.ts');
+const ids = signing.testIdentities();
+const signedOnce = await signing.signPdf(normalBytes, ids.signer, {
+  place: { kind: 'box', page: 0, rect: [340, 40, 560, 100], rotation: 0 },
+  reason: 'Approved for testing',
+  location: 'Test desk',
+});
+Object.assign(files, {
+  // The test certificate file (password in tests/fixtures/signing.ts) and the test root that issued it.
+  'test-signer.pfx': await writePfx(ids.signer.key, ids.signer.chain, signing.TEST_PFX_PASSWORD, 'Alex Example'),
+  'test-root.cer': certificateDer(ids.root.chain[0]),
+  // Signed by Alex Example, with a box on page 1.
+  'signed.pdf': signedOnce,
+  // Then signed again by Sam Example (an EC key, a certificate that issued itself), with no box.
+  'signed-twice.pdf': await signing.signPdf(signedOnce, ids.ec, { reason: 'Second signature' }),
+  // Then page 1 was changed after signing.
+  'signed-changed.pdf': await signing.changePageAfterSigning(signedOnce),
+  // A form with an empty signature box, waiting to be signed.
+  'sign-here.pdf': await signing.withEmptySignatureBox(normalBytes, 'Approver', [340, 40, 560, 100], 'Sign here:'),
+});
+
 for (const [name, bytes] of Object.entries(files)) writeFileSync(path.join(OUT, name), bytes);
-console.log(`Test PDFs written to ${OUT}: ${Object.keys(files).join(', ')}`);
+console.log(`Test files written to ${OUT}: ${Object.keys(files).join(', ')}`);

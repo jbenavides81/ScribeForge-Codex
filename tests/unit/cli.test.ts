@@ -61,6 +61,7 @@ function io(over: Partial<CliIo> = {}): CliIo {
       return null;
     },
     render: nodeRender,
+    windowsTrust: () => [],
     ...over,
   };
 }
@@ -423,6 +424,63 @@ describe('running the commands', () => {
     expect(printed.out[1]).toMatch(/^ScribeForge, from the command line\./);
     expect(await run(['help', 'redact'])).toBe(EXIT.done);
     expect(printed.out[2]).toMatch(/^scribeforge redact report\.pdf/);
+    expect(await run(['help', 'verify'])).toBe(EXIT.done);
+    expect(printed.out[3]).toMatch(/^scribeforge verify signed\.pdf/);
+  });
+});
+
+describe('verify (stop 2e)', () => {
+  const root = () => readFileSync(at('test-root.cer')).toString('base64');
+
+  it('checks each signature in the words the app uses; exit code 3 until whose it is is confirmed', async () => {
+    expect(await run(['verify', 'signed.pdf'])).toBe(EXIT.check);
+    expect(printed.out).toContain('This file has 1 signature: valid, identity not confirmed.');
+    expect(printed.out).toContain("Signature1: Valid. The file hasn't changed since Alex Example signed it.");
+    expect(printed.out).toContain('  Identity not confirmed. Anyone can make a certificate with any name.');
+    expect(printed.out).toContain('  Not checked: whether the certificate was cancelled. That needs the internet.');
+  });
+
+  it('trusts a certificate given with --trust (DER or PEM), and Windows trusted ones: exit code 0', async () => {
+    expect(await run(['verify', 'signed.pdf', '--trust', 'test-root.cer'])).toBe(EXIT.done);
+    expect(printed.out).toContain("This file has 1 signature. It's valid.");
+    writeFileSync(at('root.pem'), `-----BEGIN CERTIFICATE-----\n${root().replace(/(.{64})/g, '$1\n')}\n-----END CERTIFICATE-----\n`);
+    expect(await run(['verify', 'signed.pdf', '--trust', 'root.pem'])).toBe(EXIT.done);
+    printed.out = [];
+    expect(await run(['verify', 'signed.pdf'], { windowsTrust: () => [root()] })).toBe(EXIT.done);
+    expect(printed.out).toContain('  Windows on this PC trusts ScribeForge Test Root.');
+  });
+
+  it('a file changed after signing, or with no signatures, fails with exit code 3', async () => {
+    expect(await run(['verify', 'signed-changed.pdf', '--trust', 'test-root.cer'])).toBe(EXIT.check);
+    expect(printed.out).toContain('This file has 1 signature: changed after signing.');
+    expect(await run(['verify', 'normal.pdf'])).toBe(EXIT.check);
+    expect(printed.out).toContain('This file has no signatures.');
+  });
+
+  it('gives JSON for scripts', async () => {
+    expect(await run(['verify', 'signed-twice.pdf', '--json', '--trust', 'test-root.cer'])).toBe(EXIT.check);
+    const result = JSON.parse(printed.out.join('\n'));
+    expect(result.ok).toBe(false);
+    expect(result.signatures.map((s: { status: string; identity: string }) => [s.status, s.identity])).toEqual([
+      ['signed-after', 'mine'],
+      ['valid', 'unknown'],
+    ]);
+  });
+
+  it('mistakes get a plain message: a missing or wrong certificate file, or asking it to save', async () => {
+    expect(await run(['verify', 'signed.pdf', '--trust', 'nowhere.cer'])).toBe(EXIT.file);
+    expect(printed.err.at(-1)).toBe('nowhere.cer couldn\'t be found.');
+    expect(await run(['verify', 'signed.pdf', '--trust', 'normal.pdf'])).toBe(EXIT.file);
+    expect(printed.err.at(-1)).toBe("normal.pdf isn't a certificate file (.cer, .crt or .pem).");
+    expect(parseCommand(['verify', 'signed.pdf', '-o', 'x.pdf'])).toMatchObject({ ok: false, error: '"verify" only checks signatures; it doesn\'t save a file.' });
+  });
+
+  it('info lists the signatures', async () => {
+    expect(await run(['info', 'signed-twice.pdf'])).toBe(EXIT.done);
+    expect(printed.out).toContain('  Signatures: 2 signatures');
+    expect(printed.out).toContain('    (to check them: scribeforge verify)');
+    expect(await run(['info', 'sign-here.pdf'])).toBe(EXIT.done);
+    expect(printed.out).toContain('  Signatures: 1 empty signature box');
   });
 });
 

@@ -17,6 +17,7 @@ Which program made the file, when it was created and last changed, its PDF versi
 - **Details**, including any extra ones another program added (such as a company name).
 - **Attached files**, for the whole document or on a page.
 - **Form fields**, and whether they're filled in.
+- **Signatures**, and empty signature boxes waiting to be signed. The [Sign](14-signing.md) screen checks them.
 - **Comments**, and who wrote them.
 - **Scripts and actions** that could run code, open a program or send data. ScribeForge never runs them.
 - **Bookmarks**.

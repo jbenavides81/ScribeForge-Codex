@@ -21,6 +21,10 @@ export function buildNotes(report: BuildReport): string[] {
     const n = report.annotationsNotFlattened;
     lines.push(`${plural(n, 'annotation')} couldn't be burned into the page, because ${n === 1 ? 'it has' : 'they have'} no look of ${n === 1 ? 'its' : 'their'} own; ${n === 1 ? "it's" : "they're"} kept as ${n === 1 ? 'an annotation' : 'annotations'}.`);
   }
+  if (report.signaturesLeftOut > 0) {
+    const n = report.signaturesLeftOut;
+    lines.push(`${plural(n, 'signature')} ${n === 1 ? 'was' : 'were'} left out, with ${n === 1 ? 'its box' : 'their boxes'}: a signature only holds for the exact file that was signed.`);
+  }
   if (report.formFieldsDetached > 0) lines.push("Form fields look the same but can't be filled in, in the new file.");
   if (report.actionsRemoved > 0) lines.push('Scripts and other actions were removed.');
   if (report.attachmentsLeftOut > 0) {

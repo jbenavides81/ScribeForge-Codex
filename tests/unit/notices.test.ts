@@ -17,14 +17,22 @@ const SHIPPED = [
   'culori',
   'html-entities',
   'node-html-better-parser',
+  'pkijs',
+  'asn1js',
+  'pvtsutils',
+  'pvutils',
+  'bytestreamjs',
+  '@noble/hashes',
 ];
+/** Packages whose shipped copy isn't the top-level one in node_modules. */
+const WHERE: Record<string, string> = { '@noble/hashes': 'pkijs/node_modules/@noble/hashes' };
 
 describe('third-party notices', () => {
   const notices = readFileSync(path.join(ROOT, 'THIRD-PARTY-NOTICES.md'), 'utf8');
 
   for (const name of SHIPPED) {
     it(`lists ${name} with its installed version and licence`, () => {
-      const pkg = JSON.parse(readFileSync(path.join(ROOT, 'node_modules', name, 'package.json'), 'utf8'));
+      const pkg = JSON.parse(readFileSync(path.join(ROOT, 'node_modules', WHERE[name] ?? name, 'package.json'), 'utf8'));
       expect(notices).toContain(`## ${pkg.name} ${pkg.version}`);
       expect(notices).toContain(`Licence: ${pkg.license}.`);
       expect(['MIT', 'Apache-2.0', 'OFL-1.1', '0BSD', 'BSD-3-Clause', 'ISC']).toContain(pkg.license);

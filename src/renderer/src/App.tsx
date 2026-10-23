@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
-import type { AppInfo, MenuCommand, OpenedFile, OpenResult, RecentFile, SettingsChange } from '../../shared/api';
+import type { AppInfo, CertificateFileInfo, MenuCommand, OpenedFile, OpenResult, RecentFile, SettingsChange, TrustList } from '../../shared/api';
 import type { Settings as AppSettings } from '../../shared/settings';
 import { DOC_INFO_FIELDS, type CleanOptions, type DocInfo, type FileReport, type RedactKeep } from '../../engine/types';
+import { baseName, safeFileName } from '../../engine/names';
+import { soundForUpdate } from '../../engine/sign/space';
+import type { CertificateSummary, EmptySignatureField, SignatureCheck } from '../../engine/sign/types';
 import { annotReducer, emptyAnnots, hasAnnotChanges } from './annotate/annotState';
 import { fileAnnotsOf, type FileAnnot, type PdfAnnotationData } from './annotate/fileAnnots';
 import { applyAppearance, onSystemThemeChange } from './appearance';
@@ -10,8 +13,8 @@ import { CarriesList } from './details/CarriesList';
 import { Icon, type IconName } from './components/Icon';
 import { editReducer, emptyEdit, hasChanges, newKey, type Tile } from './pages/editState';
 import { PagesView } from './pages/PagesView';
-import { inspectDocument } from './pages/engineClient';
-import { useSaving, type ReviewRequest } from './pages/saving';
+import { checkDocumentSignatures, emptySignatureBoxes, inspectDocument } from './pages/engineClient';
+import { useSaving, type NewFileReason, type ReviewRequest, type SignChoices } from './pages/saving';
 import { emptyRedact, markLabel, marksByPage, redactReducer, type RedactMark } from './redact/redactState';
 import { engineInput, type ConfirmRequest, type SourceDoc } from './pages/sources';
 import { About } from './screens/About';
@@ -19,11 +22,15 @@ import { CleanUp } from './screens/CleanUp';
 import { Details } from './screens/Details';
 import { Help, HELP_PAGES } from './screens/Help';
 import { Settings } from './screens/Settings';
+import { Sign } from './screens/Sign';
 import { Start } from './screens/Start';
+import { newFileNote, signaturesSummary } from './sign/describe';
+import { MakeCertificateDialog } from './sign/MakeCertificateDialog';
+import { SignDialog } from './sign/SignDialog';
 import { DocumentView } from './viewer/DocumentView';
 import { loadDocument, OpenError, type PdfDocument } from './viewer/pdfjs';
 
-type Screen = 'start' | 'document' | 'pages' | 'details' | 'cleanup' | 'settings' | 'help' | 'about';
+type Screen = 'start' | 'document' | 'pages' | 'details' | 'cleanup' | 'sign' | 'settings' | 'help' | 'about';
 
 interface OpenDocument {
   /** Each opened document gets a fresh viewer. */
@@ -110,6 +117,16 @@ export function App() {
   const [redactKeep, setRedactKeep] = useState<RedactKeep>({});
   /** Save a redaction log too: offered each time, off unless ticked. */
   const [wantLog, setWantLog] = useState(false);
+  /** Who's trusted when checking signatures: Windows' certificates and the person's own list. */
+  const [trust, setTrust] = useState<TrustList | null>(null);
+  /** What checking the open file's signatures found (null while checking). */
+  const [signatures, setSignatures] = useState<{ docId: number; list: SignatureCheck[] | null; failed: boolean } | null>(null);
+  /** The signing window, with the certificate file remembered and the file's empty signature boxes. */
+  const [signing, setSigning] = useState<{ remembered: CertificateFileInfo | null; emptyFields: EmptySignatureField[] } | null>(null);
+  /** Drawing the signature's box on the page, with what was chosen in the signing window. */
+  const [placing, setPlacing] = useState<Omit<SignChoices, 'place'> | null>(null);
+  /** The Make a certificate window, and where it was opened from. */
+  const [making, setMaking] = useState<'screen' | 'sign' | null>(null);
   const redactRef = useRef(redact);
   redactRef.current = redact;
   const docRef = useRef<OpenDocument | null>(null);
@@ -130,6 +147,7 @@ export function App() {
       setRecent(r);
       if (i.settingsNotice) setMessage(i.settingsNotice);
     });
+    void api.trustList().then(setTrust);
   }, []);
 
   useEffect(() => {
@@ -137,6 +155,20 @@ export function App() {
     applyAppearance(settings);
     return onSystemThemeChange(() => applyAppearance(settings));
   }, [settings]);
+
+  // Check the open file's signatures in the background, again whenever the trusted list changes.
+  useEffect(() => {
+    if (!doc || !trust) return;
+    let current = true;
+    setSignatures((s) => (s?.docId === doc.id ? s : { docId: doc.id, list: null, failed: false }));
+    checkDocumentSignatures(doc.bytes, trust.anchors, doc.password).then(
+      (list) => current && setSignatures({ docId: doc.id, list, failed: false }),
+      () => current && setSignatures({ docId: doc.id, list: null, failed: true }),
+    );
+    return () => {
+      current = false;
+    };
+  }, [doc, trust]);
 
   // The new file's details: the open file's, with any changes made on the Details screen.
   const report = doc && docReport?.docId === doc.id ? docReport.report : null;
@@ -214,6 +246,9 @@ export function App() {
     setDetailsEdit({});
     setCleanChoices({});
     setDocReport(null);
+    setSignatures(null);
+    setPlacing(null);
+    api.forgetCertificate();
     setScreen('start');
     release([current?.pdf, ...extra.map((s) => s.pdf)]);
   }, []);
@@ -238,7 +273,9 @@ export function App() {
       annotDispatch({ type: 'reset' });
       redactDispatch({ type: 'reset' });
       setDetailsEdit({});
-    setCleanChoices({});
+      setCleanChoices({});
+      setPlacing(null);
+      api.forgetCertificate();
       setScreen('document');
       release([previous?.pdf, ...extra.map((s) => s.pdf)]);
     } catch (error) {
@@ -308,6 +345,9 @@ export function App() {
           break;
         case 'show-cleanup':
           if (docRef.current) setScreen('cleanup');
+          break;
+        case 'show-sign':
+          if (docRef.current) setScreen('sign');
           break;
         case 'save':
           if (docRef.current) void saveAllRef.current();
@@ -380,6 +420,7 @@ export function App() {
     producer: info ? `ScribeForge ${info.version}` : 'ScribeForge',
     reviewBeforeSave: settings?.reviewBeforeSave ?? true,
     redactionDpi: settings?.redactionDpi ?? 200,
+    signed: report ? report.carries.signatures.filter((s) => s.signed).length : null,
     confirm,
     review: (request) => new Promise<boolean>((resolve) => setReviewing({ ...request, resolve })),
     reviewMarks: () =>
@@ -390,11 +431,56 @@ export function App() {
       }),
     onMessage: setMessage,
     onSaved: async (path) => handleResult(await api.openPath(path)),
+    // Changes went into the signed file; only redaction marks (never applied by signing) would be lost.
+    onSigned: async (path) => {
+      if (dirtyRef.current.marks) {
+        const ok = await confirm({
+          title: 'Open the signed file?',
+          message: "The signed file is saved. Opening it closes this one, and your redaction marks, which aren't in the signed file, are lost.",
+          confirmLabel: 'Open the signed file',
+          cancelLabel: 'Keep my marks',
+        });
+        if (!ok) return;
+      }
+      await handleResult(await api.openPath(path));
+    },
     // The marks are applied, so they don't count as unsaved; anything else still asks first.
     onRedacted: (path) => unlessUnsaved(async () => handleResult(await api.openPath(path)), { marksApplied: true }),
   });
   const saveAllRef = useRef(saving.saveAll);
   saveAllRef.current = saving.saveAll;
+
+  // Signing adds to the file as it is, unless it has unsaved changes, a password or a damaged structure.
+  const newFile: NewFileReason = !doc ? null : otherChanges ? 'changes' : doc.password || doc.permissions ? 'password' : soundForUpdate(doc.bytes) ? null : 'damaged';
+  const docSignatures = doc && signatures?.docId === doc.id ? signatures : null;
+
+  const startSigning = async (remembered?: CertificateFileInfo) => {
+    if (!doc) return;
+    const found = remembered ?? (await api.rememberedCertificate());
+    const emptyFields = newFile ? [] : await emptySignatureBoxes(doc.bytes, doc.password).catch(() => []);
+    setSigning({ remembered: found, emptyFields });
+  };
+
+  /** Opens exactly what a signature covers, as a separate file. Nothing is saved unless the person saves it. */
+  const openSignedVersion = (check: SignatureCheck) => {
+    const current = docRef.current;
+    if (!current) return;
+    const name = `${safeFileName(`${baseName(current.name)} (as signed by ${check.name ?? 'the signer'})`)}.pdf`;
+    void unlessUnsaved(() => handleResult({ ok: true, file: { path: current.path, name, bytes: current.bytes.slice(0, check.signedLength) } }));
+  };
+
+  const trustSigner = async (check: SignatureCheck) => {
+    const cert = check.certificate;
+    if (!cert) return;
+    const ok = await confirm({
+      title: 'Trust this certificate?',
+      message: `Only trust it if you know it's ${cert.name}'s: for example, they gave it to you, or read you its fingerprint. From now on, ScribeForge says signatures made with it are by ${cert.name}. Fingerprint: ${cert.fingerprint}`,
+      confirmLabel: 'Trust it',
+    });
+    if (ok) setTrust(await api.trustCertificate(cert.der));
+  };
+
+  const untrust = async (cert: CertificateSummary) => setTrust(await api.untrustCertificate(cert.der));
 
   if (!settings || !info) return null;
 
@@ -404,6 +490,7 @@ export function App() {
     { id: 'pages', label: 'Pages', icon: 'pages', disabled: !doc },
     { id: 'details', label: 'Details', icon: 'details', disabled: !doc },
     { id: 'cleanup', label: 'Clean up', icon: 'clean', disabled: !doc },
+    { id: 'sign', label: 'Sign', icon: 'seal', disabled: !doc },
     { id: 'settings', label: 'Settings', icon: 'settings' },
     { id: 'help', label: 'Help', icon: 'help' },
     { id: 'about', label: 'About', icon: 'about' },
@@ -494,6 +581,22 @@ export function App() {
               onAskLink={setLink}
               onRefusedLink={(address) => setMessage(`This link can't be opened from ScribeForge: ${address}`)}
               onClose={() => void closeWithCheck()}
+              signatureNote={docSignatures?.list?.length ? { text: signaturesSummary(docSignatures.list), onShow: () => setScreen('sign') } : null}
+              placing={
+                placing
+                  ? {
+                      onPlaced: (page, rect, rotation) => {
+                        const chosen = placing;
+                        setPlacing(null);
+                        void saving.sign({ ...chosen, place: { kind: 'box', page, rect, rotation } }, newFile);
+                      },
+                      onCancel: () => {
+                        setPlacing(null);
+                        api.forgetCertificate();
+                      },
+                    }
+                  : null
+              }
             />
           </div>
         )}
@@ -535,6 +638,21 @@ export function App() {
             working={saving.working}
           />
         )}
+        {doc && screen === 'sign' && (
+          <Sign
+            name={doc.name}
+            checks={docSignatures?.list ?? null}
+            failed={docSignatures?.failed ?? false}
+            trusted={trust?.mine ?? []}
+            newFileNote={newFileNote(newFile)}
+            working={saving.working}
+            onSign={() => void startSigning()}
+            onOpenSigned={openSignedVersion}
+            onTrust={(check) => void trustSigner(check)}
+            onUntrust={(cert) => void untrust(cert)}
+            onMakeCertificate={() => setMaking('screen')}
+          />
+        )}
         {screen === 'settings' && (
           <Settings
             settings={settings}
@@ -552,6 +670,47 @@ export function App() {
       </main>
 
       {password && <PasswordDialog key={password.id} request={password} />}
+      {signing && (
+        <SignDialog
+          remembered={signing.remembered}
+          newFile={newFile}
+          emptyFields={signing.emptyFields}
+          onChooseFile={() => api.chooseCertificate()}
+          onUnlock={(path, pw) => api.unlockCertificate(path, pw)}
+          onCancel={() => {
+            api.forgetCertificate();
+            setSigning(null);
+          }}
+          onSign={(choices) => {
+            setSigning(null);
+            void saving.sign(choices, newFile);
+          }}
+          onDraw={(choices) => {
+            setSigning(null);
+            setPlacing(choices);
+            setScreen('document');
+          }}
+          onMakeCertificate={() => {
+            api.forgetCertificate();
+            setSigning(null);
+            setMaking('sign');
+          }}
+        />
+      )}
+      {making && (
+        <MakeCertificateDialog
+          defaultName={settings.authorName}
+          onMake={(request) => api.makeCertificate(request)}
+          onCancel={() => setMaking(null)}
+          onDone={(path) => {
+            const from = making;
+            setMaking(null);
+            const name = path.split(/[\\/]/).pop() ?? path;
+            setMessage(`Saved your certificate as ${name}. Keep it safe, and remember its password: ScribeForge can't get it back.`);
+            if (from === 'sign') void startSigning({ path, name, exists: true });
+          }}
+        />
+      )}
       {reviewingMarks && (
         <Dialog
           title={redact.marks.length === 1 ? 'Redact 1 mark?' : `Redact ${redact.marks.length} marks?`}

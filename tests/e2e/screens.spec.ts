@@ -7,7 +7,7 @@ import path from 'node:path';
 import { THEME_CHOICES } from '../../src/shared/themes';
 import { choose, closeApp, goTo, launch, openFixture, SCREENS, setTheme, waitForFirstPage } from './helpers';
 
-const SCREEN_NAMES = ['Start', 'Document', 'Pages', 'Details', 'Clean up', 'Settings', 'Help', 'About'] as const;
+const SCREEN_NAMES = ['Start', 'Document', 'Pages', 'Details', 'Clean up', 'Sign', 'Settings', 'Help', 'About'] as const;
 /**
  * Each theme's row also shows the list of what a new file carries before saving, the Document
  * screen in Redact mode with a mark selected, the list of marks before redacting, and the

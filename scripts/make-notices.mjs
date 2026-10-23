@@ -18,6 +18,13 @@ export const SHIPPED = [
   { name: 'html-entities', what: 'Used by pdf-lib' },
   { name: 'node-html-better-parser', what: 'Used by pdf-lib' },
   { name: 'inter-ui', what: 'The Inter font' },
+  { name: 'pkijs', what: 'Signing: certificates and signatures (CMS)' },
+  { name: 'asn1js', what: 'Signing: the format certificates and signatures are stored in, used by pkijs' },
+  { name: 'pvtsutils', what: 'Used by pkijs and asn1js' },
+  { name: 'pvutils', what: 'Used by pkijs and asn1js' },
+  { name: 'bytestreamjs', what: 'Used by pkijs' },
+  // pkijs uses its own copy, which isn't the one the build tools use.
+  { name: '@noble/hashes', dir: 'pkijs/node_modules/@noble/hashes', what: 'Hashing, used by pkijs' },
 ];
 
 function licenceText(dir) {
@@ -29,8 +36,8 @@ function licenceText(dir) {
 }
 
 let out = '# Third-party notices\n\nScribeForge includes the following open-source software. Thank you to everyone who made it.\n';
-for (const { name, what } of SHIPPED) {
-  const dir = path.resolve('node_modules', name);
+for (const { name, dir: where, what } of SHIPPED) {
+  const dir = path.resolve('node_modules', where ?? name);
   const pkg = JSON.parse(readFileSync(path.join(dir, 'package.json'), 'utf8'));
   out += `\n---\n\n## ${pkg.name} ${pkg.version}\n\n${what}. Licence: ${pkg.license}.\n\n${licenceText(dir)}\n`;
 }

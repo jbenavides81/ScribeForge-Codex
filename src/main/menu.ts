@@ -37,6 +37,7 @@ export function buildMenu(win: BrowserWindow): void {
         { label: '&Pages', accelerator: 'CmdOrCtrl+Shift+P', click: send('show-pages') },
         { label: '&Details', accelerator: 'CmdOrCtrl+Shift+D', click: send('show-details') },
         { label: '&Clean up', click: send('show-cleanup') },
+        { label: '&Sign', click: send('show-sign') },
       ],
     },
     {

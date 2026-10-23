@@ -7,7 +7,8 @@
 //    placeholder that names the page instead of referring to it, so copying a page can never drag
 //    another page (or its text) into the new file. Afterwards placeholders become links to the
 //    right page of the new file, or are removed if that page isn't in it.
-// 3. Scripts and other risky actions are removed; form fields keep their look but are detached.
+// 3. Scripts and other risky actions are removed; form fields keep their look but are detached;
+//    signatures are left out.
 // 4. A final check cuts any remaining reference to a page outside the page list, and everything
 //    no longer reachable is swept out before saving.
 // 5. The new file's details are written twice, in the classic details and a fresh XMP copy, so
@@ -54,6 +55,20 @@ function readPlaceholder(obj: PDFObject | undefined): { source: string; index: n
   return { source: rest.slice(0, cut), index: Number(rest.slice(cut + 1)) };
 }
 
+/** A signed signature field's box: its field (or a field above it) is a signature field with a value. */
+function isSigned(doc: PDFDocument, widget: PDFDict): boolean {
+  let type: string | undefined;
+  let value: PDFObject | undefined;
+  let d: PDFDict | undefined = widget;
+  for (let i = 0; d && i < 30 && (!type || !value); i++) {
+    type ??= nameOf(d.get(N('FT')));
+    value ??= d.get(N('V'));
+    const parent: PDFObject | undefined = d.lookup(N('Parent'));
+    d = parent instanceof PDFDict ? parent : undefined;
+  }
+  return type === 'Sig' && doc.context.lookup(value) instanceof PDFDict;
+}
+
 /** Rule 2 and 3, applied to the source pages that will be copied. Changes the loaded copy only. */
 function prepareSourcePages(doc: PDFDocument, sourceId: string, indices: number[], report: BuildReport, redacting: boolean, options: BuildOptions): void {
   const { clean, keep: kept = {} } = options;
@@ -84,6 +99,12 @@ function prepareSourcePages(doc: PDFDocument, sourceId: string, indices: number[
       if (!(annot instanceof PDFDict)) continue;
       const subtype = nameOf(annot.get(N('Subtype')));
       const comment = COMMENT_KINDS.has(subtype ?? '') || subtype === 'Popup';
+      // A signature only holds for the exact file that was signed, so no new file keeps one: not
+      // its data, and not its box, which would make the new file look signed (docs/Plan_Sign.md, S7).
+      if (subtype === 'Widget' && isSigned(doc, annot)) {
+        report.signaturesLeftOut++;
+        continue;
+      }
       if (redacting) {
         // A redacted file keeps links between pages, and only what the person chose to keep.
         const keepIt =

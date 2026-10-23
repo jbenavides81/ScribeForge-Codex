@@ -1,3 +1,4 @@
+import type { EmptySignatureField, PreparedSignature, SignatureCheck, SignRequest, TrustAnchor } from '../../../engine/sign/types';
 import type { AnnotationInput, BuildOptions, BuildReport, FileReport, PageItem, SourceInput } from '../../../engine/types';
 
 type Reply = { id: number; ok: true; result: unknown } | { id: number; ok: false; message: string };
@@ -51,4 +52,24 @@ export function buildDocument(
 /** A PDF's details and what it carries. */
 export function inspectDocument(source: SourceInput): Promise<FileReport> {
   return run({ kind: 'inspect', source: copied(source) });
+}
+
+/** Checks every signature in a PDF against the trusted certificates. */
+export function checkDocumentSignatures(bytes: Uint8Array, trusted: TrustAnchor[], password?: string): Promise<SignatureCheck[]> {
+  return run({ kind: 'signatures', bytes: bytes.slice(), trusted, password });
+}
+
+/** The empty signature boxes a PDF has, which can be signed in. */
+export function emptySignatureBoxes(bytes: Uint8Array, password?: string): Promise<EmptySignatureField[]> {
+  return run({ kind: 'empty-signature-fields', bytes: bytes.slice(), password });
+}
+
+/** Signing, step 1: the file with the signature's field, look and space added, and the fingerprint to sign. */
+export function prepareSigning(bytes: Uint8Array, request: SignRequest): Promise<PreparedSignature> {
+  return run({ kind: 'prepare-signature', bytes: bytes.slice(), request });
+}
+
+/** Signing, step 3: the signature in its place, checked. */
+export function finishSigning(prepared: PreparedSignature, signature: Uint8Array): Promise<Uint8Array> {
+  return run({ kind: 'finish-signature', prepared, signature });
 }

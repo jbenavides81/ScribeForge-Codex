@@ -14,6 +14,7 @@ import { buildMenu } from './menu';
 import { APP_ORIGIN, blockNetwork, registerAppScheme, serveApp } from './network';
 import { isTestWindow, placeAndShow } from './placement';
 import { SettingsStore } from './settingsStore';
+import { registerSigning } from './signing';
 
 const here = import.meta.dirname;
 const rendererDir = path.join(here, '../renderer');
@@ -124,6 +125,7 @@ function registerHandlers(): void {
     await shell.openExternal(address);
     return true;
   });
+  registerSigning(win, store);
 }
 
 // Started with a command (scribeforge merge ...): run it and exit, without the app's window.

@@ -130,6 +130,8 @@ export interface BuildReport {
   bookmarksRemoved: number;
   /** Form fields that keep their look but can no longer be filled in. */
   formFieldsDetached: number;
+  /** Signatures left out: a signature only holds for the exact file that was signed. */
+  signaturesLeftOut: number;
   /** Scripts and other actions removed (anything but web links, page links and page commands). */
   actionsRemoved: number;
   /** References to pages outside the new file found by the final check and cut. */
@@ -176,6 +178,7 @@ export function emptyReport(): BuildReport {
     bookmarksKept: 0,
     bookmarksRemoved: 0,
     formFieldsDetached: 0,
+    signaturesLeftOut: 0,
     actionsRemoved: 0,
     strayReferencesCut: 0,
     objectsSwept: 0,
@@ -320,6 +323,8 @@ export interface Carries {
   /** Files attached to the document, or to a page (with its 1-based number). */
   attachments: { name: string; size?: number; page?: number }[];
   formFields: { name: string; filled: boolean }[];
+  /** Signature fields: signed ones, and empty boxes waiting to be signed. */
+  signatures: { name: string; signed: boolean }[];
   /** Comments and marks other readers show, counted by kind (PDF subtype), and who wrote them. */
   comments: { total: number; kinds: Record<string, number>; authors: string[] };
   actions: (ActionPlace & { action: RiskyAction })[];

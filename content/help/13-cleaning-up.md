@@ -11,6 +11,7 @@ Click **Clean up** on the left (or **View > Clean up**). The screen lists what t
 - **Details**: removes the title, author, subject, keywords, the program that made the file, its dates, and any extra details another program added. Both copies go: the classic list and the XMP copy. The new file only says ScribeForge made it, and when.
 - **Attached files**: removes files attached to pages. Files attached to the whole document are never copied into new files anyway.
 - **Scripts and actions**: always removed from every new file.
+- **Signatures**: a new file can't keep them, so they're always left out, with their boxes. See [Signing](14-signing.md).
 - **Form fields**:
     - **Keep**: they look the same but can't be filled in (as in any new file);
     - **Burn into the page**: what they show becomes part of the page, and the fields and their data go;

@@ -145,6 +145,14 @@ export function sizeText(bytes: number | undefined): string {
   return `${Math.round((bytes / 1024 / 1024) * 10) / 10} MB`;
 }
 
+/** "2 signatures", "1 signature and 1 empty signature box", or "None". */
+export function signaturesText(list: { signed: boolean }[]): string {
+  const signed = list.filter((s) => s.signed).length;
+  const empty = list.length - signed;
+  const parts = [signed > 0 ? plural(signed, 'signature') : '', empty > 0 ? plural(empty, 'empty signature box', 'empty signature boxes') : ''].filter(Boolean);
+  return parts.length > 0 ? parts.join(' and ') : 'None';
+}
+
 /** What several new files carry, together (for split). */
 export function combineCarries(list: Carries[]): Carries {
   const [first] = list;
@@ -157,6 +165,7 @@ export function combineCarries(list: Carries[]): Carries {
     xmp: first?.xmp ?? 'none',
     attachments: list.flatMap((c) => c.attachments),
     formFields: list.flatMap((c) => c.formFields),
+    signatures: list.flatMap((c) => c.signatures),
     comments: {
       total: list.reduce((n, c) => n + c.comments.total, 0),
       kinds,

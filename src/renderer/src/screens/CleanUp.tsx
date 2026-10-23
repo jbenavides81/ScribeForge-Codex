@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import type { CleanOptions, FileReport } from '../../../engine/types';
 import { Icon } from '../components/Icon';
-import { commentKinds } from '../details/describe';
+import { commentKinds, signaturesText } from '../details/describe';
 import { plural } from '../words';
 
 /** Everything ticked, with form fields and comments removed rather than burned in. */
@@ -116,6 +116,10 @@ export function CleanUp({
 
       <Section id="scripts" title="Scripts and actions" found={c.actions.length > 0 ? `${plural(c.actions.length, 'script or action', 'scripts or actions')}.` : 'None.'}>
         <p className="sf-muted">Always removed: ScribeForge never copies scripts or risky actions into new files. Web links and links to pages stay.</p>
+      </Section>
+
+      <Section id="signatures" title="Signatures" found={`${signaturesText(c.signatures)}.`}>
+        <p className="sf-muted">A new file never keeps a signature or its box: a signature only holds for the exact file that was signed.</p>
       </Section>
 
       <Section id="formFields" title="Form fields" found={c.formFields.length > 0 ? `${plural(c.formFields.length, 'field')}, ${c.formFields.filter((f) => f.filled).length} filled in.` : 'None.'}>

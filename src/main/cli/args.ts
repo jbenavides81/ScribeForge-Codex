@@ -6,7 +6,7 @@ import type { Area } from '../../shared/cli';
 
 export type { Area };
 
-export const COMMANDS = ['help', 'merge', 'split', 'rotate', 'extract', 'info', 'details', 'redact'] as const;
+export const COMMANDS = ['help', 'merge', 'split', 'rotate', 'extract', 'info', 'details', 'redact', 'verify'] as const;
 export type CommandName = (typeof COMMANDS)[number];
 
 interface Common {
@@ -25,7 +25,8 @@ export type Command =
   | (Common & { name: 'extract'; input: string; pages: string; output?: string })
   | (Common & { name: 'info'; input: string; json: boolean })
   | (Common & { name: 'details'; input: string; set: Partial<DocInfo>; output?: string })
-  | (Common & { name: 'redact'; input: string; pages?: string; areas: string[]; find: string[]; dpi: 150 | 200 | 300; output?: string });
+  | (Common & { name: 'redact'; input: string; pages?: string; areas: string[]; find: string[]; dpi: 150 | 200 | 300; output?: string })
+  | (Common & { name: 'verify'; input: string; json: boolean; trust: string[] });
 
 export type Parsed = { ok: true; command: Command } | { ok: false; error: string; topic?: CommandName };
 
@@ -86,6 +87,7 @@ export function parseCommand(words: string[]): Parsed {
         area: { type: 'string', multiple: true },
         find: { type: 'string', multiple: true },
         dpi: { type: 'string' },
+        trust: { type: 'string', multiple: true },
       },
     });
     values = parsed.values;
@@ -109,10 +111,12 @@ export function parseCommand(words: string[]): Parsed {
     info: ['json'],
     details: ['title', 'author', 'subject', 'keywords'],
     redact: ['pages', 'area', 'find', 'dpi'],
+    verify: ['json', 'trust'],
   };
   const extra = Object.keys(values).find((k) => !['output', 'overwrite', 'password-stdin', ...allowed[name]].includes(k));
   if (extra) return { ok: false, topic: name, error: `"--${extra}" isn't something "${name}" understands.` };
   if (name === 'info' && output !== undefined) return { ok: false, topic: name, error: '"info" only shows details; it doesn\'t save a file.' };
+  if (name === 'verify' && output !== undefined) return { ok: false, topic: name, error: '"verify" only checks signatures; it doesn\'t save a file.' };
 
   const fail = (error: string): Parsed => ({ ok: false, topic: name, error });
   const one = () => {
@@ -177,6 +181,11 @@ export function parseCommand(words: string[]): Parsed {
         if (typeof problemArea === 'string') return fail(problemArea);
       }
       return { ok: true, command: { ...common, name, input: positionals[0], pages, areas, find, dpi, output } };
+    }
+    case 'verify': {
+      const problem = one();
+      if (problem) return problem;
+      return { ok: true, command: { ...common, name, input: positionals[0], json: values.json === true, trust: (values.trust as string[] | undefined) ?? [] } };
     }
     default:
       return { ok: false, error: `"${first}" isn't a ScribeForge command.` };

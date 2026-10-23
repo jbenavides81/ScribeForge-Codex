@@ -1,17 +1,18 @@
 # ScribeForge
 
-An open-source, offline PDF toolkit for Windows: view, organise, annotate, inspect and redact PDFs, with signing and an encrypted archive to follow. ScribeForge is a BC6 app.
+An open-source, offline PDF toolkit for Windows: view, organise, annotate, inspect, redact and sign PDFs, with an encrypted archive to follow. ScribeForge is a BC6 app.
 
 ScribeForge never sends anything over the network, and it never changes the files you open: edits save to new files.
 
-**Status:** Phase 2 is under way. Version 1.4.0. You can:
+**Status:** Phase 2 is complete. Version 1.5.0. You can:
 - open, view, search and copy from PDFs;
 - on the Pages screen, merge, split, reorder, rotate, delete, extract and insert blank pages;
 - on the Document screen, highlight, underline and strike out text; add notes, text boxes, drawings, shapes (rectangles, ellipses, lines and arrows) and stamps; move and resize them; see every annotation in the comments panel; reply to comments; change or delete annotations already in the file; and burn annotations into the page;
 - on the Details screen, see and change a file's title, author, subject and keywords, and see everything else it carries: attached files, form fields, comments, scripts, bookmarks, hidden layers, hidden page data and links;
 - on the Clean up screen, make a copy without any of those: details, attachments, form fields and comments (burned into the page or removed), what's on hidden layers, bookmarks and hidden page data;
+- on the Sign screen, sign a PDF with a certificate file (`.pfx` or `.p12`), with a box drawn on the page, in an empty signature box the file has, or invisibly; make your own certificate; and check the signatures a file has, without the internet: whether it changed since it was signed, and whether each signer's certificate leads back to one Windows trusts or you chose to trust;
 - on the Document screen in Redact mode, mark areas, selected text, every match of a search, or every email address, phone number, Social Security number, card number or listed word (Find patterns), check the marks, and save a redacted copy, keeping its details, bookmarks or comments if you choose, with a redaction log if you want one;
-- from Command Prompt or PowerShell, merge, split, rotate, extract, show details and redact without opening the window (see [Command line](#command-line)).
+- from Command Prompt or PowerShell, merge, split, rotate, extract, show details, redact and check signatures without opening the window (see [Command line](#command-line)).
 
 Everything saves to a new file. Before saving, ScribeForge shows what the new file will carry (you can turn this off in Settings). Help is built in: press F1.
 
@@ -22,6 +23,7 @@ Everything saves to a new file. Before saving, ScribeForge shows what the new fi
 | [docs/Roadmap.md](docs/Roadmap.md) | Phases and stops, with each stop's required checks |
 | [docs/Phase0_Plan.md](docs/Phase0_Plan.md) | Phase 0 (approved): test results, dependencies, design and decisions |
 | [docs/Plan_Phase2.md](docs/Plan_Phase2.md) | Phase 2 (approved): the Forge tools, with test results and decisions |
+| [docs/Plan_Sign.md](docs/Plan_Sign.md) | Signing (stop 2e, approved): test results, libraries, design and decisions |
 | [docs/Research_TextRemoval.md](docs/Research_TextRemoval.md) | Research (stop 2c): removing only what's under a redaction mark, with a prototype in [research/](research/) |
 | [docs/manual-tests/](docs/manual-tests/) | Step-by-step scripts for trying each stop, and [v1-full.md](docs/manual-tests/v1-full.md) for the installed app |
 | [content/help/](content/help/) | The help pages shown in the app (plain Markdown; edit them without touching code) |
@@ -33,7 +35,7 @@ Everything saves to a new file. Before saving, ScribeForge shows what the new fi
    ```bash
    npm run dist
    ```
-   It's saved as `release\ScribeForge Setup 1.4.0.exe`.
+   It's saved as `release\ScribeForge Setup 1.5.0.exe`.
 2. Run it. The installer isn't signed, so Windows shows "Windows protected your PC" the first time: click **More info**, then **Run anyway**.
 3. Choose **Only for me** and where to install it (your user folder by default; no administrator rights needed). ScribeForge is then in the Start menu.
 
@@ -56,10 +58,11 @@ The installer puts `scribeforge.cmd` next to ScribeForge.exe, normally in `%LOCA
 | `scribeforge info report.pdf --json` | Details and what the file carries (`--json` for scripts) |
 | `scribeforge details report.pdf --title "Q3"` | A copy with the title, author, subject or keywords changed |
 | `scribeforge redact report.pdf --find "John Smith"` | A redacted copy; also `--pages`, `--area` and `--dpi` |
+| `scribeforge verify signed.pdf --trust someone.cer` | Checks its signatures; exit code 0 only when all are valid and whose they are is confirmed |
 
 - Without `-o`, the new file goes next to the first PDF, named the way the app names it, and never replaces a file. With `-o`, an existing file is replaced only with `--overwrite`. The files being read are never written over.
 - Protected PDFs: a small window asks for the password, or add `--password-stdin` and send it as the first line of input. Passwords are never taken as part of the command.
-- Exit codes: 0 done, 1 the command couldn't be followed, 2 a problem with a file, 3 a check failed and nothing was saved.
+- Exit codes: 0 done, 1 the command couldn't be followed, 2 a problem with a file, 3 a check failed (nothing was saved, or for `verify`, a signature isn't valid or confirmed).
 - The installer doesn't change your PATH. To type just `scribeforge` from any folder, add the install folder to your PATH yourself: Windows **Settings > System > About > Advanced system settings > Environment Variables**, then edit **Path** under your user's variables.
 - From the source code, run it as `npx electron . <command> ...` after `npm run build`.
 
@@ -105,7 +108,7 @@ npm run trial:reset
 | `npm run e2e` | Builds the app and runs the whole-app tests on it (Playwright) |
 | `npm run e2e:packaged` | Builds the installed-app version (`release\win-unpacked`) and runs every whole-app test on it |
 | `npm run dist` | Builds the Windows installer: `release\ScribeForge Setup <version>.exe` |
-| `npm run fixtures` | Makes the test PDFs |
+| `npm run fixtures` | Makes the test PDFs, and the made-up test certificates for signing |
 | `npm run notices` | Rebuilds `THIRD-PARTY-NOTICES.md` from the installed packages |
 | `npm run icons` | Redraws the app icon (`build/icon.png`, `build/icon.ico`) and its contact sheet (`docs/icon-sheet.png`) |
 | `npm start` | Builds the app and runs it as installed (with your real settings, not trial mode) |
@@ -116,10 +119,10 @@ npm run trial:reset
 
 | Path | What it is |
 |---|---|
-| `src/main/` | The app process: window, menus, file dialogs, reading files, settings, the network guard, and the command-line tool (`src/main/cli/`) |
+| `src/main/` | The app process: window, menus, file dialogs, reading files, settings, the network guard, the command-line tool (`src/main/cli/`), and certificate files and making signatures (`src/main/sign/`) |
 | `src/preload/` | The small bridge the screens are allowed to call |
 | `src/renderer/` | The screens (React), styles, the pdf.js viewer, annotating, redacting, help, and the Pages screen with its worker |
-| `src/engine/` | The PDF engine for the page tools, annotations, file details and redaction: plain TypeScript, run in a worker inside the window and in the unit tests |
+| `src/engine/` | The PDF engine for the page tools, annotations, file details, redaction and signing (`src/engine/sign/`): plain TypeScript, run in a worker inside the window and in the unit tests |
 | `src/shared/` | Code used by both sides: themes and the annotation colours (the only places colours are defined), settings rules, link rules, pdf.js safety options |
 | `tests/unit/` | Unit tests (Vitest) |
 | `tests/e2e/` | Whole-app tests (Playwright), for the built app and the installed app |
@@ -155,6 +158,9 @@ npm run trial:reset
     - The redaction log, if you ask for one, never contains the removed text: only hints such as `j•••@e•••.com`. A test searches it for every redacted value.
 - **The installed program is locked down.** Electron's switches are set in ScribeForge.exe itself: it can't be used to run other scripts as Node.js, ignores `NODE_OPTIONS`, loads only its own packaged files, and refuses to start if those files have been changed. Tests read the switches back from the installed build.
 - **The command line keeps the same rules** as the app: no network, inputs never changed or written over, PDF scripts never run, passwords never stored, and redaction checked the same way.
+- **Signing keeps your key apart from PDFs.** The certificate file and its password are handled only by the part of the app that never reads PDFs. It gets the fingerprint of the prepared file and gives back only the signature, and it forgets the key straight after. The password is never saved; a test searches the app's data folder for it.
+- **A signature is added to the end of the file,** so the signed file starts with the file you opened, byte for byte, and signatures already in it stay valid. Each new signature is checked before anything is saved, and tests check them again with Node's own crypto.
+- **Checking is strict.** Anything other than another signature added after a signature counts as "changed after signing", and Open the signed version shows exactly what was signed. New files never keep a signature or its box, so they can't look signed when they aren't.
 - **Files locked by their author** (no password needed to open, but limits on copying or changes) can be viewed and their pages saved. ScribeForge says first that the new file won't have those limits.
 
 ## Interim parts, to match BC6 later

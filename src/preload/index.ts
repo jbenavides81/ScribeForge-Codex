@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
-import type { MenuCommand, SaveBesideRequest, SaveManyRequest, SaveRequest, ScribeForgeApi, SettingsChange } from '../shared/api';
+import type { MakeCertificateRequest, MenuCommand, SaveBesideRequest, SaveManyRequest, SaveRequest, ScribeForgeApi, SettingsChange } from '../shared/api';
 
 // The only things the screens can ask the rest of the app to do.
 const api: ScribeForgeApi = {
@@ -25,6 +25,15 @@ const api: ScribeForgeApi = {
       ipcRenderer.removeListener('menu', handler);
     };
   },
+  rememberedCertificate: () => ipcRenderer.invoke('sign:remembered'),
+  chooseCertificate: () => ipcRenderer.invoke('sign:choose'),
+  unlockCertificate: (path: string, password: string) => ipcRenderer.invoke('sign:unlock', path, password),
+  signDigest: (digest: Uint8Array) => ipcRenderer.invoke('sign:sign', digest),
+  forgetCertificate: () => ipcRenderer.send('sign:forget'),
+  trustList: () => ipcRenderer.invoke('sign:trust-list'),
+  trustCertificate: (der: string) => ipcRenderer.invoke('sign:trust-add', der),
+  untrustCertificate: (der: string) => ipcRenderer.invoke('sign:trust-remove', der),
+  makeCertificate: (request: MakeCertificateRequest) => ipcRenderer.invoke('sign:make', request),
 };
 
 contextBridge.exposeInMainWorld('scribeforge', api);

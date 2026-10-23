@@ -45,7 +45,10 @@ export type IconName =
   | 'stamp'
   | 'comments'
   | 'reply'
-  | 'clean';
+  | 'clean'
+  | 'seal'
+  | 'tick'
+  | 'warning';
 
 export const PATHS: Record<IconName, string[]> = {
   logo: [
@@ -98,5 +101,8 @@ export const PATHS: Record<IconName, string[]> = {
   comments: ['M6 8 H40 V32 H20 L10 42 V32 H6 Z', 'M46 20 H58 V44 H54 V54 L44 44 H26 V38'],
   reply: ['M28 14 L10 30 L28 46', 'M10 30 H38 C 50 30 56 38 56 52'],
   clean: ['M46 6 L32 30', 'M22 30 H40 L48 58 H14 Z', 'M24 44 L22 58', 'M31 44 V58', 'M38 44 L40 58'],
+  seal: ['M32 8 a17 17 0 1 0 0.01 0 Z', 'M24 25 L30 31 L41 19', 'M24 40 L19 58 L27 53 L31 58 L32 42', 'M40 40 L45 58 L37 53 L33 58'],
+  tick: ['M12 34 L26 48 L52 18'],
+  warning: ['M32 8 L58 54 H6 Z', 'M32 24 V38', 'M32 45 V46'],
   help: ['M32 6 a26 26 0 1 0 0.01 0 Z', 'M24 25 a8 8 0 1 1 11 7.4 C 33 33.5 32 35 32 38 V40', 'M32 47 V48'],
 };

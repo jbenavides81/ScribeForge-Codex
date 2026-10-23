@@ -12,6 +12,7 @@ Every command makes a new PDF; the files you give it are never changed.
   scribeforge info report.pdf [--json]                  Its details and what it carries
   scribeforge details report.pdf --title "Q3" [-o titled.pdf]
   scribeforge redact report.pdf --find "John Smith" [-o out.pdf]
+  scribeforge verify signed.pdf [--trust someone.cer] [--json]   Check its signatures
 
 Type "scribeforge help <command>" for more about one command.
 
@@ -23,7 +24,7 @@ Also, for every command that makes a file:
                          input. Without it, ScribeForge asks in a small window.
 
 Exit codes: 0 done; 1 the command couldn't be followed; 2 a problem with a file; 3 a check
-failed and nothing was saved.`;
+failed and nothing was saved (for verify: a signature isn't valid, or whose it is isn't confirmed).`;
 
 const TOPICS: Partial<Record<CommandName, string>> = {
   merge: `scribeforge merge a.pdf b.pdf [c.pdf ...] [-o merged.pdf]
@@ -67,6 +68,17 @@ pages and the links between them.
 
 Afterwards ScribeForge searches the new file for every --find text. If it still finds one, it
 says so, saves nothing, and exits with code 3.`,
+  verify: `scribeforge verify signed.pdf [--trust someone.cer]... [--json]
+
+Checks every signature in the PDF, as the app's Sign screen does: whether the file has changed
+since it was signed, and whether each signer's certificate leads back to one that's trusted.
+Windows' trusted certificates on this PC count, and so does any certificate given with --trust
+(a .cer, .crt or .pem file; give --trust more than once for more).
+
+It can't check whether a certificate was cancelled, because that needs the internet.
+
+Exits with 0 when every signature is valid and whose it is is confirmed; otherwise 3 (and 3
+when the file has no signatures). With --json, the same as JSON, for scripts.`,
 };
 
 export function helpText(topic?: string): string {

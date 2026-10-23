@@ -55,6 +55,7 @@ describe('several new files', () => {
     xmp: 'read',
     attachments: [],
     formFields: [],
+    signatures: [],
     comments: { total: 0, kinds: {}, authors: [] },
     actions: [],
     bookmarks: 0,

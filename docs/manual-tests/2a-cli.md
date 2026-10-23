@@ -27,10 +27,7 @@ copy tests\fixtures\out\*.pdf "%USERPROFILE%\Desktop\ScribeForge CLI test"
 ## Command Prompt
 
 1. Open an ordinary **Command Prompt** window: Start menu, type `cmd`, press Enter. Not Windows Terminal's PowerShell tab, and not the terminal in an editor.
-2. Go to the ScribeForge folder, remember where the launcher is, then go to the test folder:
-```bash
-cd /d C:\Users\jab\source\repos\ScribeForge-Codex
-```
+2. Go to the ScribeForge folder (type `cd /d ` and the folder you cloned it into), remember where the launcher is, then go to the test folder:
 ```bash
 set SF=%CD%\release\win-unpacked\scribeforge.cmd
 ```
@@ -62,9 +59,9 @@ cd /d "%USERPROFILE%\Desktop\ScribeForge CLI test"
 
 ## PowerShell
 
-22. Open **Windows PowerShell** from the Start menu and type these one at a time:
+22. Open **Windows PowerShell** from the Start menu, go to the ScribeForge folder (`cd` and the folder you cloned it into), and type these one at a time:
 ```bash
-$sf = "C:\Users\jab\source\repos\ScribeForge-Codex\release\win-unpacked\scribeforge.cmd"
+$sf = "$PWD\release\win-unpacked\scribeforge.cmd"
 ```
 ```bash
 cd "$env:USERPROFILE\Desktop\ScribeForge CLI test"

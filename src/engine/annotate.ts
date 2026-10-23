@@ -92,7 +92,7 @@ export function wrapText(text: string, font: PDFFont, size: number, width: numbe
 }
 
 /** Text the standard Helvetica font can draw; anything it can't becomes "?". The full text is kept in the annotation. */
-function drawable(text: string, font: PDFFont): string {
+export function drawable(text: string, font: PDFFont): string {
   const supported = new Set(font.getCharacterSet());
   return [...text].map((ch) => (supported.has(ch.codePointAt(0) ?? 0) || ch === '\n' ? ch : '?')).join('');
 }
@@ -137,7 +137,7 @@ function setAppearance(doc: PDFDocument, dict: PDFDict, ap: PDFRef): void {
 }
 
 /** The matrix that turns a box drawn upright into the page's own space, for a page turned `rotation`. */
-function upright(rotation: Rotation): number[] {
+export function upright(rotation: Rotation): number[] {
   const angle = (rotation * Math.PI) / 180;
   const [c, s] = [Math.round(Math.cos(angle)), Math.round(Math.sin(angle))];
   return [c, s, -s, c, 0, 0];

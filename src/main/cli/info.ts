@@ -1,6 +1,6 @@
 // "scribeforge info": a file's details and what it carries, as plain text.
 import type { FileReport } from '../../engine/types';
-import { actionText, commentKinds, DETAIL_LABELS, detailValue, formatDate, pageSize, sizeText } from '../../renderer/src/details/describe';
+import { actionText, commentKinds, DETAIL_LABELS, detailValue, formatDate, pageSize, signaturesText, sizeText } from '../../renderer/src/details/describe';
 import { plural } from '../../renderer/src/words';
 
 export function infoText(name: string, report: FileReport): string[] {
@@ -37,6 +37,9 @@ export function infoText(name: string, report: FileReport): string[] {
   lines.push(`  Attached files: ${c.attachments.length > 0 ? plural(c.attachments.length, 'file') : 'none'}`);
   for (const a of c.attachments) lines.push(`    ${[a.name, a.size !== undefined ? sizeText(a.size) : '', a.page ? `on page ${a.page}` : 'attached to the whole file'].filter(Boolean).join(', ')}`);
   lines.push(`  Form fields: ${c.formFields.length > 0 ? `${plural(c.formFields.length, 'field')}, ${filled} filled in` : 'none'}`);
+  lines.push(`  Signatures: ${signaturesText(c.signatures).replace(/^None$/, 'none')}`);
+  for (const f of c.signatures) lines.push(`    ${f.name || 'unnamed signature'}${f.signed ? '' : ' (empty)'}`);
+  if (c.signatures.some((f) => f.signed)) lines.push('    (to check them: scribeforge verify)');
   lines.push(`  Comments: ${c.comments.total > 0 ? commentKinds(c.comments.kinds) : 'none'}`);
   if (c.comments.authors.length > 0) lines.push(`    by ${c.comments.authors.join(', ')}`);
   lines.push(`  Scripts and actions: ${c.actions.length > 0 ? plural(c.actions.length, 'script or action', 'scripts or actions') : 'none'}`);

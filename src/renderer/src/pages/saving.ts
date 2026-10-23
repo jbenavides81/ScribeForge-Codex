@@ -5,6 +5,8 @@
 // Redacting also saves a new file, built the same way from the pages as arranged.
 import { useCallback, useRef, useState } from 'react';
 import { outputName } from '../../../engine/names';
+import { signatureSpace } from '../../../engine/sign/space';
+import type { CertificateSummary, SignaturePlace } from '../../../engine/sign/types';
 import { emptyReport, type AnnotationInput, type BuildReport, type Carries, type CleanOptions, type DocInfo, type PageItem, type RedactedPage, type RedactKeep } from '../../../engine/types';
 import type { RedactionDpi } from '../../../shared/settings';
 import { toEngineInput, type AnnotState } from '../annotate/annotState';
@@ -17,7 +19,8 @@ import { browserSurface } from '../redact/surface';
 import { pdfjsLib } from '../viewer/pdfjs';
 import { plural } from '../words';
 import { buildNotes, cleanedMessage, cleanNotes, redactedMessage, redactionNotes, savedMessage } from './report';
-import { buildDocument, inspectDocument } from './engineClient';
+import { boxTime } from '../sign/describe';
+import { buildDocument, finishSigning, inspectDocument, prepareSigning } from './engineClient';
 import type { EditState, Tile } from './editState';
 import { engineInput, type ConfirmRequest, type SourceDoc } from './sources';
 
@@ -31,6 +34,22 @@ function addReports(reports: BuildReport[]): BuildReport {
   for (const r of reports) for (const key of Object.keys(total) as (keyof BuildReport)[]) total[key] += r[key];
   return total;
 }
+
+/** What the person chose in the signing window. Page numbers are the open file's, as shown. */
+export interface SignChoices {
+  certificate: CertificateSummary;
+  /** Size of the certificates, to keep room for the signature. */
+  certificateBytes: number;
+  place: SignaturePlace;
+  reason: string;
+  location: string;
+}
+
+/**
+ * Why signing makes a new file first, instead of adding to the file as it is: unsaved changes,
+ * a password (the new file has none), or a file whose structure is damaged. Null when it doesn't.
+ */
+export type NewFileReason = 'changes' | 'password' | 'damaged' | null;
 
 /** Shown before saving, when Settings says so. */
 export interface ReviewRequest {
@@ -52,11 +71,13 @@ export function useSaving({
   producer,
   reviewBeforeSave,
   redactionDpi,
+  signed: signedCount,
   confirm,
   review,
   reviewMarks,
   onMessage,
   onSaved,
+  onSigned,
   onRedacted,
 }: {
   sources: SourceDoc[];
@@ -70,6 +91,8 @@ export function useSaving({
   producer: string;
   reviewBeforeSave: boolean;
   redactionDpi: RedactionDpi;
+  /** How many signatures the open file has (null until it's been read): new files leave them out, so saving asks first. */
+  signed: number | null;
   confirm: (request: ConfirmRequest) => Promise<boolean>;
   review: (request: ReviewRequest) => Promise<boolean>;
   /** Shows the redaction marks for checking. The marks left when the person goes on, or null. */
@@ -77,6 +100,8 @@ export function useSaving({
   onMessage: (text: string) => void;
   /** Opens the saved file; the message about saving is shown once it's open. */
   onSaved: (path: string) => Promise<void>;
+  /** Opens the signed file (asking first if redaction marks would be lost). */
+  onSigned: (path: string) => Promise<void>;
   onRedacted: (path: string) => Promise<void>;
 }) {
   const [working, setWorking] = useState<string | null>(null);
@@ -119,6 +144,22 @@ export function useSaving({
     });
   };
 
+  /** Asks first when the new file's pages come from the open file and it's signed: the new file won't be. */
+  const signedCheck = async (items: PageItem[], forSigning = false): Promise<boolean> => {
+    if (!items.some((i) => i.kind === 'page' && i.source === primary.id)) return true;
+    // Not read yet (just opened): read it now, so the question is never skipped.
+    const signed = signedCount ?? (await inspectDocument(engineInput(primary))).carries.signatures.filter((s) => s.signed).length;
+    if (signed === 0) return true;
+    const which = signed === 1 ? 'its signature' : `its ${signed} signatures`;
+    return confirm({
+      title: forSigning ? "Its signatures won't come across" : "The new file won't be signed",
+      message: forSigning
+        ? `${primary.name} is signed, and has changes that aren't saved. ScribeForge makes a new file with your changes, then signs that. The new file can't keep ${which}: a signature only holds for the exact file that was signed.`
+        : `${primary.name} is signed. The new file won't be: a signature only holds for the exact file that was signed, so ${which} ${signed === 1 ? 'is' : 'are'} left out, with ${signed === 1 ? 'its box' : 'their boxes'}.`,
+      confirmLabel: forSigning ? 'Make the new file and sign it' : 'Save without the signatures',
+    });
+  };
+
   /** Runs one save at a time, showing what's happening. */
   const run = async (task: () => Promise<void>) => {
     if (busy.current || !primary) return;
@@ -146,7 +187,7 @@ export function useSaving({
   const save = (tiles: Tile[], name: string, openAfter: boolean) =>
     run(async () => {
       const items = tiles.map((t) => t.item);
-      if (items.length === 0 || !(await lockCheck(items))) return;
+      if (items.length === 0 || !(await lockCheck(items)) || !(await signedCheck(items))) return;
       setWorking('Making the new file…');
       const { bytes, report } = await build(items);
       if (!(await reviewed([{ name, bytes }], report))) return;
@@ -165,7 +206,7 @@ export function useSaving({
     if (!primary) return Promise.resolve();
     const merged = usedSources(edit.tiles.map((t) => t.item)).length > 1;
     return save(edit.tiles, outputName(primary.name, merged ? 'merged' : 'edited'), true);
-  }, [primary, edit, annots, fileAnnots, authorName, sources, details, producer, reviewBeforeSave]);
+  }, [primary, edit, annots, fileAnnots, authorName, sources, details, producer, reviewBeforeSave, signedCount]);
 
   const saveSelected = (tiles: Tile[]) => {
     const positions = tiles.map((t) => edit.tiles.indexOf(t) + 1);
@@ -175,7 +216,8 @@ export function useSaving({
   const split = (parts: number[][]) =>
     run(async () => {
       const groups = parts.map((part) => part.map((n) => edit.tiles[n - 1]));
-      if (!(await lockCheck(groups.flat().map((t) => t.item)))) return;
+      const all = groups.flat().map((t) => t.item);
+      if (!(await lockCheck(all)) || !(await signedCheck(all))) return;
       const files: { name: string; bytes: Uint8Array }[] = [];
       const reports: BuildReport[] = [];
       for (const [i, group] of groups.entries()) {
@@ -203,7 +245,7 @@ export function useSaving({
       if (!reviewedMarks || reviewedMarks.marks.length === 0) return;
       const { marks, log, keep } = reviewedMarks;
       const items = edit.tiles.map((t) => t.item);
-      if (items.length === 0 || !(await lockCheck(items))) return;
+      if (items.length === 0 || !(await lockCheck(items)) || !(await signedCheck(items))) return;
       const kept = new Set(items.flatMap((i) => (i.kind === 'page' && i.source === primary.id ? [i.index] : [])));
       const byPage = new Map<number, RedactMark[]>();
       for (const m of marks) if (kept.has(m.page)) byPage.set(m.page, [...(byPage.get(m.page) ?? []), m]);
@@ -271,7 +313,7 @@ export function useSaving({
   const clean = (choices: CleanOptions) =>
     run(async () => {
       const items = edit.tiles.map((t) => t.item);
-      if (items.length === 0 || !(await lockCheck(items))) return;
+      if (items.length === 0 || !(await lockCheck(items)) || !(await signedCheck(items))) return;
       setWorking('Making the cleaned file…');
       const { bytes, report } = await build(items, choices);
       const name = outputName(primary.name, 'cleaned');
@@ -285,5 +327,64 @@ export function useSaving({
       } else if (result.reason === 'failed') onMessage(result.message ?? "ScribeForge couldn't save the file.");
     });
 
-  return { working, saveAll, saveSelected, split, redact, clean };
+  /**
+   * Sign (docs/Plan_Sign.md, section 2): the signature is added to the end of the file as it is,
+   * so the file before it, and any signatures in it, stay exactly as they were. When the file
+   * has unsaved changes, a password or a damaged structure, the new file is made first (as Save
+   * makes it) and that is signed. The certificate's key stays in the main process: it gets only
+   * the fingerprint of the prepared file, and gives back only the signature.
+   */
+  const sign = (choices: SignChoices, newFile: NewFileReason) =>
+    run(async () => {
+      try {
+        let bytes = primary.bytes;
+        let place = choices.place;
+        if (newFile) {
+          const items = edit.tiles.map((t) => t.item);
+          if (items.length === 0 || !(await lockCheck(items)) || !(await signedCheck(items, true))) return;
+          if (place.kind === 'field') throw new Error('Signature boxes already in the file can only be used when the file is signed as it is.');
+          setWorking('Making the new file…');
+          bytes = (await build(items)).bytes;
+          if (place.kind === 'box') {
+            // The box was drawn on the file as it was opened: find where that page is now, and how it's turned.
+            const from = place.page;
+            const at = items.findIndex((i) => i.kind === 'page' && i.source === primary.id && i.index === from);
+            if (at < 0) throw new Error("The page with the signature box isn't in the new file.");
+            const item = items[at] as Extract<PageItem, { kind: 'page' }>;
+            const own = (await primary.pdf.getPage(from + 1)).rotate;
+            place = { ...place, page: at, rotation: ((((own + item.rotate) % 360) + 360) % 360) as 0 | 90 | 180 | 270 };
+          }
+        }
+        setWorking('Preparing the file…');
+        const now = new Date();
+        const prepared = await prepareSigning(bytes, {
+          place,
+          name: choices.certificate.name,
+          reason: choices.reason.trim() || undefined,
+          location: choices.location.trim() || undefined,
+          time: now.toISOString(),
+          shownTime: boxTime(now),
+          space: signatureSpace(choices.certificateBytes),
+          producer,
+        });
+        setWorking('Signing…');
+        const signature = await api.signDigest(prepared.digest);
+        if (!signature.ok) {
+          onMessage(signature.message);
+          return;
+        }
+        const signedBytes = await finishSigning(prepared, signature.signature);
+        setWorking('Saving…');
+        const result = await api.saveFile({ bytes: signedBytes, suggestedName: outputName(primary.name, 'signed'), sourcePaths: sources.map((s) => s.path) });
+        if (result.ok) {
+          setWorking('Opening the signed file…');
+          await onSigned(result.path);
+          onMessage(`Signed and saved ${fileName(result.path)}.`);
+        } else if (result.reason === 'failed') onMessage(result.message ?? "ScribeForge couldn't save the file.");
+      } finally {
+        api.forgetCertificate();
+      }
+    });
+
+  return { working, saveAll, saveSelected, split, redact, clean, sign };
 }

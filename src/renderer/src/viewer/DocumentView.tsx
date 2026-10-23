@@ -25,7 +25,7 @@ import { CommentsPanel, commentEntries } from '../annotate/CommentsPanel';
 import { asAnnot, hiddenFromViewer, needsRedraw, type FileAnnot } from '../annotate/fileAnnots';
 import { boxAt, boxToBounds, boxToQuad, pointsToBox, quadToBox, selectionQuads, type Box } from '../annotate/geometry';
 import { Icon } from '../components/Icon';
-import type { Pt, Rect } from '../../../engine/types';
+import type { Pt, Rect, Rotation } from '../../../engine/types';
 import { findTerm, glyphsIn, lineBoxes, PADDING, pageGlyphs, pageMayContain, type Glyph } from '../redact/glyphs';
 import { MarkPanel } from '../redact/MarkPanel';
 import { PatternDialog, type FoundMatch } from '../redact/PatternDialog';
@@ -82,6 +82,8 @@ export function DocumentView({
   onAskLink,
   onRefusedLink,
   onClose,
+  signatureNote,
+  placing,
 }: {
   pdf: PdfDocument;
   name: string;
@@ -110,6 +112,10 @@ export function DocumentView({
   onAskLink: (address: string) => void;
   onRefusedLink: (address: string) => void;
   onClose: () => void;
+  /** What checking the file's signatures found, in a sentence, with a way to see them. */
+  signatureNote: { text: string; onShow: () => void } | null;
+  /** Drawing a signature's box: the box, on a page as it's shown, or cancelled. */
+  placing: { onPlaced: (page: number, rect: Rect, rotation: Rotation) => void; onCancel: () => void } | null;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<PDFViewer | null>(null);
@@ -417,6 +423,42 @@ export function DocumentView({
     setFindResult(`Marked ${plural(ticked.length, 'match', 'matches')} on ${plural(pages, 'page')}.`);
   };
 
+  /** A signature's box: drag it out on a page, after choosing to sign with a box. */
+  const startSignatureBox = (e: React.MouseEvent) => {
+    if (!placing || e.button !== 0) return;
+    const page = pageAt(e.target as Element);
+    if (!page) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const origin = page.div.getBoundingClientRect();
+    const sx = e.clientX - origin.left;
+    const sy = e.clientY - origin.top;
+    const clamp = (v: number, max: number) => Math.min(Math.max(v, 0), max);
+    const boxFor = (ev: MouseEvent): DragBox => {
+      const now = page.div.getBoundingClientRect();
+      const x = clamp(ev.clientX - now.left, now.width);
+      const y = clamp(ev.clientY - now.top, now.height);
+      return { page: page.index, left: Math.min(sx, x), top: Math.min(sy, y), right: Math.max(sx, x), bottom: Math.max(sy, y), signature: true };
+    };
+    const move = (ev: MouseEvent) => setDrag(boxFor(ev));
+    const up = (ev: MouseEvent) => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+      setDrag(null);
+      const box = boxFor(ev);
+      if (box.right - box.left < 8 || box.bottom - box.top < 8) return; // a click, not a box
+      const vp = page.view.viewport;
+      const a = vp.convertToPdfPoint(box.left, box.top);
+      const b = vp.convertToPdfPoint(box.right, box.bottom);
+      const rect: Rect = [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[0], b[0]), Math.max(a[1], b[1])];
+      const turn = page.view.pdfPage?.rotate ?? 0;
+      placing.onPlaced(page.index, rect, ((((turn % 360) + 360) % 360) as Rotation));
+    };
+    setDrag(boxFor(e.nativeEvent));
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  };
+
   /** Mark area: drag a box across part of a page. */
   const startArea = (e: React.MouseEvent) => {
     if (!redacting || redactTool !== 'area' || e.button !== 0) return;
@@ -656,6 +698,13 @@ export function DocumentView({
       const target = e.target as HTMLElement;
       if (target.closest('input, textarea, select') || document.querySelector('.sf-dialog')) return;
       const ctrl = e.ctrlKey || e.metaKey;
+      if (placing) {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          placing.onCancel();
+        }
+        return;
+      }
       if (redacting) {
         if (ctrl && e.key.toLowerCase() === 'z') redactDispatch({ type: 'undo' });
         else if (ctrl && e.key.toLowerCase() === 'y') redactDispatch({ type: 'redo' });
@@ -682,7 +731,7 @@ export function DocumentView({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [active, annots.selected, annotDispatch, tool, redacting, redact.selected, redactDispatch, redactTool]);
+  }, [active, annots.selected, annotDispatch, tool, redacting, redact.selected, redactDispatch, redactTool, placing]);
 
   // Web links in the document: show the address and ask first. Links inside the document
   // (to another page) are handled by pdf.js as usual.
@@ -853,6 +902,22 @@ export function DocumentView({
           This shows the file as it was opened. Your changes on the Pages screen go into the new file when you save.
         </p>
       )}
+      {signatureNote && !placing && (
+        <p className="sf-banner" data-testid="signatures-banner">
+          {signatureNote.text}{' '}
+          <button type="button" className="sf-link-button" onClick={signatureNote.onShow}>
+            See the signatures
+          </button>
+        </p>
+      )}
+      {placing && (
+        <div className="sf-banner sf-notice sf-placing-banner" data-testid="placing-banner">
+          <p>Drag a box on the page where the signature should go. Its name, date and reason are drawn inside it.</p>
+          <button type="button" className="sf-button" onClick={placing.onCancel}>
+            Cancel signing
+          </button>
+        </div>
+      )}
       {redacting ? (
         <RedactToolbar
           lead={lead}
@@ -901,11 +966,12 @@ export function DocumentView({
         <div className="sf-viewer-frame">
           <div
             ref={containerRef}
-            className={`sf-viewer-container${!redacting && (tool === 'note' || tool === 'text' || tool === 'stamp') ? ' sf-placing' : ''}${(redacting && redactTool === 'area') || (!redacting && (tool === 'ink' || tool === 'shape')) ? ' sf-drawing' : ''}`}
+            className={`sf-viewer-container${!placing && !redacting && (tool === 'note' || tool === 'text' || tool === 'stamp') ? ' sf-placing' : ''}${placing || (redacting && redactTool === 'area') || (!redacting && (tool === 'ink' || tool === 'shape')) ? ' sf-drawing' : ''}`}
             data-testid="viewer"
-            data-tool={redacting ? `redact-${redactTool}` : tool}
+            data-tool={placing ? 'signature' : redacting ? `redact-${redactTool}` : tool}
             onMouseDownCapture={(e) => {
-              if (!startDrawing(e)) startArea(e);
+              if (placing) startSignatureBox(e);
+              else if (!startDrawing(e)) startArea(e);
             }}
             onClickCapture={onClickCapture}
             onMouseUp={markSelection}

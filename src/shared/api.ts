@@ -1,3 +1,4 @@
+import type { CertificateSummary, TrustAnchor } from '../engine/sign/types';
 import type { RedactionDpi, Settings, TextSize } from './settings';
 import type { ThemeId } from './themes';
 
@@ -62,6 +63,34 @@ export type SaveManyResult =
   | { ok: true; folder: string; paths: string[] }
   | { ok: false; reason: 'cancelled' | 'failed'; message?: string };
 
+/** A certificate file for signing, by where it is. */
+export interface CertificateFileInfo {
+  path: string;
+  name: string;
+  exists: boolean;
+}
+
+export type UnlockResult =
+  | { ok: true; certificate: CertificateSummary; /** Size of the certificates, to keep room for the signature. */ certificateBytes: number }
+  | { ok: false; reason: 'wrong-password' | 'old-format' | 'no-key' | 'unsupported' | 'unreadable' | 'not-found' };
+
+export type SignDigestResult = { ok: true; signature: Uint8Array } | { ok: false; message: string };
+
+/** Who ScribeForge trusts when checking signatures: Windows' certificates and the person's own list. */
+export interface TrustList {
+  anchors: TrustAnchor[];
+  /** The person's own list, described. */
+  mine: CertificateSummary[];
+}
+
+export interface MakeCertificateRequest {
+  name: string;
+  email: string;
+  password: string;
+}
+
+export type MakeCertificateResult = { ok: true; path: string } | { ok: false; reason: 'cancelled' | 'failed'; message?: string };
+
 export type MenuCommand =
   | 'open'
   | 'save'
@@ -75,6 +104,7 @@ export type MenuCommand =
   | 'show-pages'
   | 'show-details'
   | 'show-cleanup'
+  | 'show-sign'
   | 'show-settings'
   | 'show-about'
   | 'show-help';
@@ -100,6 +130,22 @@ export interface ScribeForgeApi {
   clearRecent(): Promise<RecentFile[]>;
   openLink(address: string): Promise<boolean>;
   onMenu(listener: (command: MenuCommand) => void): () => void;
+  /** The certificate file remembered for signing, if any. */
+  rememberedCertificate(): Promise<CertificateFileInfo | null>;
+  /** Choose a certificate file (.pfx, .p12). Null if cancelled. */
+  chooseCertificate(): Promise<CertificateFileInfo | null>;
+  /** Opens the certificate file with its password, ready to sign. The password is never saved. */
+  unlockCertificate(path: string, password: string): Promise<UnlockResult>;
+  /** Signs the fingerprint (SHA-256) of a prepared file with the certificate opened last, then closes it. */
+  signDigest(digest: Uint8Array): Promise<SignDigestResult>;
+  /** Closes the certificate without signing. */
+  forgetCertificate(): void;
+  trustList(): Promise<TrustList>;
+  /** Adds a certificate (DER, base64) to the person's own trusted list. The screen asks first. */
+  trustCertificate(der: string): Promise<TrustList>;
+  untrustCertificate(der: string): Promise<TrustList>;
+  /** Makes a certificate in the person's name and saves it where they choose. */
+  makeCertificate(request: MakeCertificateRequest): Promise<MakeCertificateResult>;
 }
 
 /** Largest file ScribeForge will open. */

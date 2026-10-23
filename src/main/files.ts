@@ -67,7 +67,8 @@ export function forgetRecent(store: SettingsStore, filePath: string): RecentFile
   return recentFiles(store);
 }
 
+/** Clears the recent files, and with them where the certificate file for signing is. */
 export function clearRecent(store: SettingsStore): RecentFile[] {
-  store.set({ ...store.get(), recentFiles: [] });
+  store.set({ ...store.get(), recentFiles: [], certificateFile: '' });
   return recentFiles(store);
 }

@@ -1,6 +1,6 @@
 # Command line
 
-ScribeForge can merge, split, rotate, extract, show details and redact from Command Prompt or PowerShell, without opening its window. It's useful for scripts and for jobs you repeat. It uses the same engine and the same safety rules as the app: the files you give it are never changed, nothing goes over the network, and PDF scripts never run.
+ScribeForge can merge, split, rotate, extract, show details, redact and check signatures from Command Prompt or PowerShell, without opening its window. It's useful for scripts and for jobs you repeat. It uses the same engine and the same safety rules as the app: the files you give it are never changed, nothing goes over the network, and PDF scripts never run.
 
 ## Where it is
 
@@ -23,6 +23,7 @@ Type `scribeforge help` to see every command, or `scribeforge help redact` (or a
 | `scribeforge info report.pdf` | Shows its details and everything it carries; add `--json` for scripts |
 | `scribeforge details report.pdf --title "Q3"` | Saves a copy with the title, author, subject or keywords changed |
 | `scribeforge redact report.pdf --find "John Smith"` | Saves a redacted copy (see below) |
+| `scribeforge verify signed.pdf` | Checks its signatures (see below) |
 
 ## Where new files go
 
@@ -44,6 +45,17 @@ Type `scribeforge help` to see every command, or `scribeforge help redact` (or a
 
 Afterwards ScribeForge searches the new file for every `--find` text. If it still finds one, it says so and saves nothing.
 
+## Checking signatures
+
+`verify` checks every signature in a PDF, the same way the app's **Sign** screen does, and prints what it found in the same words. It never saves a file.
+
+| Option | What it does |
+|---|---|
+| `--trust someone.cer` | Trusts that certificate for this check (a `.cer`, `.crt` or `.pem` file). Give it more than once for more. Windows' trusted certificates on this PC count too. |
+| `--json` | The same, as JSON for scripts |
+
+It exits with 0 when every signature is valid and whose it is is confirmed, and 3 otherwise, including when the file has no signatures. It can't check whether a certificate was cancelled: that needs the internet. Signing from the command line isn't available yet.
+
 ## Protected files
 
 If a PDF needs a password, a small ScribeForge window asks for it. To give it from a script instead, add `--password-stdin` and send the password as the first line of input, for example from a file only you can read:
@@ -59,4 +71,4 @@ Passwords are never accepted as part of the command itself, where they'd stay in
 | 0 | Done |
 | 1 | The command couldn't be followed: a mistake in it, or nothing to do |
 | 2 | A problem with a file: missing, damaged, wrong password, or it can't be saved |
-| 3 | A check failed, such as redacted text still being found, and nothing was saved |
+| 3 | A check failed: redacted text was still found (and nothing was saved), or for `verify`, a signature isn't valid or whose it is isn't confirmed |

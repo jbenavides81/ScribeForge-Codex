@@ -4,13 +4,15 @@ import type { Rect } from '../../../engine/types';
 import { REDACTION_COLOURS } from '../../../shared/annotationColours';
 import { markLabel, type RedactMark } from './redactState';
 
-/** A box being dragged out with Mark area, in pixels on its page. */
+/** A box being dragged out with Mark area (or for a signature), in pixels on its page. */
 export interface DragBox {
   page: number;
   left: number;
   top: number;
   right: number;
   bottom: number;
+  /** A signature's box is drawn as an outline only. */
+  signature?: boolean;
 }
 
 const COLOURS = { '--sf-redact-fill': REDACTION_COLOURS.box, '--sf-redact-outline': REDACTION_COLOURS.outline } as CSSProperties;
@@ -93,7 +95,7 @@ export function RedactionLayer({
       })}
       {drag && dragPlace && (
         <span
-          className="sf-redact-drag"
+          className={drag.signature ? 'sf-sign-drag' : 'sf-redact-drag'}
           style={{
             left: `${dragPlace.x + drag.left}px`,
             top: `${dragPlace.y + drag.top}px`,

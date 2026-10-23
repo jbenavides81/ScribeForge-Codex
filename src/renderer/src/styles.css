@@ -716,3 +716,20 @@ input[type='checkbox']:checked::before {
 .sf-clean-buttons { justify-content: flex-start; }
 /* Redaction: what else the redacted file keeps. */
 .sf-keep { margin: 0.75rem 0 0.5rem; }
+
+/* Sign: the file's signatures, each with what checking it found. */
+.sf-signatures, .sf-trusted { margin: 0.75rem 0 0; padding: 0; list-style: none; }
+.sf-signature { padding: 0.75rem 1rem; margin: 0 0 0.75rem; background: var(--sf-panel); border: 1px solid var(--sf-line); border-radius: 6px; }
+.sf-signature p { margin: 0.25rem 0; overflow-wrap: anywhere; }
+.sf-signature-status { display: flex; align-items: flex-start; gap: 0.5rem; }
+.sf-signature-status svg { flex: none; margin-top: 0.1rem; }
+.sf-signature-buttons, .sf-sign-buttons { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 0.75rem; }
+.sf-trusted li { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.5rem 0; border-top: 1px solid var(--sf-line); }
+.sf-trusted p { margin: 0.15rem 0; overflow-wrap: anywhere; }
+.sf-fingerprint { overflow-wrap: anywhere; }
+.sf-sign-file { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+.sf-sign-file p { margin: 0.5rem 0; overflow-wrap: anywhere; }
+/* Drawing a signature's box: an outline only, so the page shows through. */
+.sf-sign-drag { position: absolute; outline: 2px dashed var(--sf-accent); }
+.sf-placing-banner { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+.sf-choice-column { display: flex; flex-direction: column; align-items: flex-start; }

@@ -31,7 +31,7 @@ export function baseName(fileName: string): string {
   return fileName.replace(/\.pdf$/i, '');
 }
 
-export type OutputKind = 'edited' | 'merged' | 'redacted' | 'cleaned' | { pages: number[] };
+export type OutputKind = 'edited' | 'merged' | 'redacted' | 'cleaned' | 'signed' | { pages: number[] };
 
 /** "<name> (edited).pdf", "<name> (merged).pdf", "<name> (redacted).pdf" or "<name> (pages 1-3).pdf". */
 export function outputName(sourceFileName: string, kind: OutputKind): string {

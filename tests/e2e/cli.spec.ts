@@ -99,7 +99,13 @@ test.describe('the command-line tool', () => {
     expect(sf('redact', 'redaction.pdf', '--pages', '1', '--area', '2:72,72,300,200', '--dpi', '150', '-o', 'by-area.pdf').code).toBe(0);
     expect((await pageTexts(bytesOf(at('by-area.pdf')))).slice(0, 2)).toEqual(['', '']);
 
-    for (const result of [version, redacted]) expect(result.err).not.toMatch(NETWORK_NOTE);
+    // Checking signatures (stop 2e): offline, against the certificate given, and Windows' own.
+    const verified = sf('verify', 'signed.pdf', '--trust', 'test-root.cer');
+    expect(verified.code).toBe(0);
+    expect(verified.out).toContain("This file has 1 signature. It's valid.");
+    expect(sf('verify', 'signed-changed.pdf', '--trust', 'test-root.cer')).toMatchObject({ code: 3, out: expect.stringContaining('changed after signing') });
+
+    for (const result of [version, redacted, verified]) expect(result.err).not.toMatch(NETWORK_NOTE);
     for (const [f, hash] of Object.entries(before)) expect(sha(at(f)), f).toBe(hash);
     // It never touches the app's own data folder.
     expect(readdirSync(appData)).toEqual([]);

@@ -16,9 +16,14 @@ export interface Settings {
   /** Before saving, show what the new file carries (details, attachments, comments, …). */
   reviewBeforeSave: boolean;
   redactionDpi: RedactionDpi;
+  /** Where the certificate file used for signing is (its location only, never its password). Forgotten with the recent files. */
+  certificateFile: string;
+  /** Certificates the person chose to trust when checking signatures (DER, base64; nothing secret). */
+  trustedCertificates: string[];
 }
 
 export const MAX_RECENT = 10;
+export const MAX_TRUSTED = 100;
 export const MAX_AUTHOR_NAME = 100;
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -30,6 +35,8 @@ export const DEFAULT_SETTINGS: Settings = {
   authorName: '',
   reviewBeforeSave: true,
   redactionDpi: 200,
+  certificateFile: '',
+  trustedCertificates: [],
 };
 
 const THEMES: readonly ThemeId[] = ['cathedral', 'light', 'dark', 'high-contrast', 'system'];
@@ -41,7 +48,7 @@ const TEXT_SIZES: readonly TextSize[] = ['standard', 'large', 'larger'];
  */
 export function validateSettings(raw: unknown): { settings: Settings; problems: string[] } {
   const problems: string[] = [];
-  const settings: Settings = { ...DEFAULT_SETTINGS, recentFiles: [] };
+  const settings: Settings = { ...DEFAULT_SETTINGS, recentFiles: [], trustedCertificates: [] };
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
     return { settings, problems: ['the settings were not a list of values'] };
   }
@@ -80,7 +87,21 @@ export function validateSettings(raw: unknown): { settings: Settings; problems: 
     if (REDACTION_DPIS.includes(r.redactionDpi as RedactionDpi)) settings.redactionDpi = r.redactionDpi as RedactionDpi;
     else problems.push('redactionDpi');
   }
-  if (!settings.rememberRecent) settings.recentFiles = [];
+  if (r.certificateFile !== undefined) {
+    if (typeof r.certificateFile === 'string' && r.certificateFile.length < 4096) settings.certificateFile = r.certificateFile;
+    else problems.push('certificateFile');
+  }
+  if (r.trustedCertificates !== undefined) {
+    if (Array.isArray(r.trustedCertificates)) {
+      const list = r.trustedCertificates.filter((c): c is string => typeof c === 'string' && c.length > 0 && c.length < 100_000 && /^[A-Za-z0-9+/]+=*$/.test(c));
+      if (list.length !== r.trustedCertificates.length) problems.push('trustedCertificates');
+      settings.trustedCertificates = [...new Set(list)].slice(0, MAX_TRUSTED);
+    } else problems.push('trustedCertificates');
+  }
+  if (!settings.rememberRecent) {
+    settings.recentFiles = [];
+    settings.certificateFile = '';
+  }
   return { settings, problems };
 }
 
@@ -113,8 +134,12 @@ export function removeRecent(list: readonly string[], path: string): string[] {
   return list.filter((p) => !samePath(p, path));
 }
 
-/** Applies a change from the Settings screen. Turning recent files off also clears the list. */
-export function applyChange(current: Settings, change: Partial<Omit<Settings, 'version' | 'recentFiles'>>): Settings {
-  const { settings } = validateSettings({ ...current, ...change });
+/** Applies a change from the Settings screen. Turning recent files off also clears the list, and the certificate file's location. */
+export function applyChange(current: Settings, change: Partial<Omit<Settings, 'version' | 'recentFiles' | 'certificateFile' | 'trustedCertificates'>>): Settings {
+  // Only what the Settings screen changes: the recent files, the certificate file and the trusted
+  // certificates have their own requests (and trusting one asks first).
+  const allowed = ['theme', 'textSize', 'rememberRecent', 'authorName', 'reviewBeforeSave', 'redactionDpi'] as const;
+  const picked = Object.fromEntries(allowed.filter((k) => change[k] !== undefined).map((k) => [k, change[k]]));
+  const { settings } = validateSettings({ ...current, ...picked });
   return settings;
 }

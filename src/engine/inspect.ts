@@ -142,8 +142,12 @@ function riskOf(action: PDFDict): RiskyAction | undefined {
 class ActionFinder {
   readonly found: (ActionPlace & { action: RiskyAction })[] = [];
   private seen = new Set<PDFDict>();
+  private doc: PDFDocument;
 
-  constructor(private doc: PDFDocument) {}
+  // A plain field rather than a parameter property, so Node can run the engine as it is (the fixture script does).
+  constructor(doc: PDFDocument) {
+    this.doc = doc;
+  }
 
   /** An action and the actions chained after it (/Next). */
   add(obj: PDFObject | undefined, place: ActionPlace, depth = 0): void {
@@ -271,26 +275,30 @@ export function readCarries(doc: PDFDocument, details: FileDetails): Carries {
   );
 
   // Form fields.
+  // Form fields, and signatures (signature fields), which are listed on their own.
   const formFields: Carries['formFields'] = [];
+  const signatures: Carries['signatures'] = [];
   const acroForm = doc.catalog.lookupMaybe(N('AcroForm'), PDFDict);
   const seenFields = new Set<PDFDict>();
-  const walkFields = (list: PDFObject | undefined, inherited: PDFObject | undefined, depth: number) => {
+  const walkFields = (list: PDFObject | undefined, inherited: PDFObject | undefined, inheritedType: string | undefined, depth: number) => {
     const arr = resolve(doc, list);
     if (!(arr instanceof PDFArray) || depth > 30) return;
-    for (let i = 0; i < arr.size() && formFields.length < 10_000; i++) {
+    for (let i = 0; i < arr.size() && formFields.length + signatures.length < 10_000; i++) {
       const field = resolve(doc, arr.get(i));
       if (!(field instanceof PDFDict) || seenFields.has(field)) continue;
       seenFields.add(field);
       const value = field.get(N('V')) ?? inherited;
+      const type = nameOf(field.get(N('FT'))) ?? inheritedType;
       finder.addAll(field.get(N('AA')), () => ({ where: 'field', name: fieldName(doc, field) }));
       finder.add(field.get(N('A')), { where: 'field', name: fieldName(doc, field) });
       const kids = field.lookupMaybe(N('Kids'), PDFArray);
       const kidFields = kids ? Array.from({ length: kids.size() }, (_, k) => resolve(doc, kids.get(k))).filter((k) => k instanceof PDFDict && k.has(N('T'))) : [];
-      if (kidFields.length > 0) walkFields(kids, value, depth + 1);
+      if (kidFields.length > 0) walkFields(kids, value, type, depth + 1);
+      else if (type === 'Sig') signatures.push({ name: fieldName(doc, field), signed: resolve(doc, value) instanceof PDFDict });
       else formFields.push({ name: fieldName(doc, field), filled: hasValue(resolve(doc, value)) });
     }
   };
-  walkFields(acroForm?.get(N('Fields')), undefined, 0);
+  walkFields(acroForm?.get(N('Fields')), undefined, undefined, 0);
 
   // Pages: comments, links, attachments on pages, and page and annotation actions.
   const comments: Carries['comments'] = { total: 0, kinds: {}, authors: [] };
@@ -365,6 +373,7 @@ export function readCarries(doc: PDFDocument, details: FileDetails): Carries {
     xmp: details.xmp.state,
     attachments,
     formFields,
+    signatures,
     comments,
     actions: finder.found,
     bookmarks: countOutline(readOutline(doc)),

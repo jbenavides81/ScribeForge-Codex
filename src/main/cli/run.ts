@@ -9,6 +9,10 @@ import { existsSync, mkdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { buildPdf } from '../../engine/build';
 import { inspectPdf } from '../../engine/inspect';
+import { certificateDer, parseCertificate, toBase64 } from '../../engine/sign/certificate';
+import { checkSignatures } from '../../engine/sign/check';
+import type { TrustAnchor } from '../../engine/sign/types';
+import { isConfirmed, signaturesSummary, signatureText } from '../../renderer/src/sign/describe';
 import { outputName, parseRanges, splitEvery, type OutputKind } from '../../engine/names';
 import type { BuildReport, PageItem, RedactedPage, Rotation, SourceInput } from '../../engine/types';
 import type { RenderJob, RenderResult } from '../../shared/cli';
@@ -32,6 +36,8 @@ export interface CliIo {
   /** Asks for a PDF's password, in a small window. Null if the person cancels. */
   askPassword(fileName: string, retry: boolean): Promise<string | null>;
   render(job: RenderJob): Promise<RenderResult>;
+  /** Windows' trusted certificates on this PC (DER, base64), for checking signatures. */
+  windowsTrust(): string[];
 }
 
 /** A problem that ends the command with a plain message and an exit code. */
@@ -137,6 +143,24 @@ const pageItems = (source: string, indexes: number[], rotate: (i: number) => Rot
 
 const all = (input: Input) => Array.from({ length: input.pageCount }, (_, i) => i);
 
+/** A certificate to trust from --trust: a .cer, .crt or .pem file, as DER or PEM. */
+function trustedFile(io: CliIo, file: string): TrustAnchor {
+  const full = path.resolve(io.cwd, file);
+  const name = path.basename(full);
+  if (!existsSync(full) || !statSync(full).isFile()) throw new CliError(EXIT.file, `${file} couldn't be found.`);
+  let bytes = new Uint8Array(readFileSync(full));
+  const text = new TextDecoder('latin1').decode(bytes.subarray(0, 64));
+  if (text.includes('-----BEGIN')) {
+    const pem = /-----BEGIN CERTIFICATE-----([\s\S]*?)-----END CERTIFICATE-----/.exec(new TextDecoder('latin1').decode(bytes));
+    bytes = pem ? new Uint8Array(Buffer.from(pem[1].replace(/\s+/g, ''), 'base64')) : new Uint8Array(0);
+  }
+  try {
+    return { der: toBase64(certificateDer(parseCertificate(bytes))), source: 'mine' };
+  } catch {
+    throw new CliError(EXIT.file, `${name} isn't a certificate file (.cer, .crt or .pem).`);
+  }
+}
+
 function report(io: CliIo, lines: string[]): void {
   for (const line of lines) io.out(line);
 }
@@ -220,6 +244,18 @@ export async function runCommand(command: Command, io: CliIo): Promise<number> {
         save(out, result.bytes);
         built(out, result);
         return EXIT.done;
+      }
+      case 'verify': {
+        const trusted = command.trust.map((file) => trustedFile(io, file));
+        const input = await readInput(io, command.input, 's1', passwords);
+        const checks = await checkSignatures(input.bytes, [...trusted, ...io.windowsTrust().map((der) => ({ der, source: 'windows' as const }))], input.password);
+        const ok = checks.length > 0 && checks.every(isConfirmed);
+        if (command.json) io.out(JSON.stringify({ file: input.path, ok, signatures: checks }, null, 2));
+        else {
+          report(io, [input.name, '', signaturesSummary(checks)]);
+          for (const check of checks) report(io, ['', ...signatureText(check)]);
+        }
+        return ok ? EXIT.done : EXIT.check;
       }
       case 'redact': {
         const input = await readInput(io, command.input, 's1', passwords);

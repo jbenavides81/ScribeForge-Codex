@@ -9,10 +9,37 @@ const tempDir = () => mkdtempSync(path.join(tmpdir(), 'sf-settings-'));
 
 describe('validateSettings', () => {
   it('accepts valid settings unchanged', () => {
-    const input = { version: 1, theme: 'light', textSize: 'larger', rememberRecent: true, recentFiles: ['C:\\a.pdf'], authorName: 'Pat', reviewBeforeSave: false, redactionDpi: 300 };
+    const input = {
+      version: 1,
+      theme: 'light',
+      textSize: 'larger',
+      rememberRecent: true,
+      recentFiles: ['C:\\a.pdf'],
+      authorName: 'Pat',
+      reviewBeforeSave: false,
+      redactionDpi: 300,
+      certificateFile: 'C:\\me.pfx',
+      trustedCertificates: ['MIIBAA=='],
+    };
     const { settings, problems } = validateSettings(input);
     expect(problems).toEqual([]);
     expect(settings).toEqual(input);
+  });
+
+  it('keeps where the certificate file is only while recent files are remembered, and checks the trusted list', () => {
+    const forgotten = validateSettings({ rememberRecent: false, certificateFile: 'C:\\me.pfx' }).settings;
+    expect(forgotten.certificateFile).toBe('');
+    const { settings, problems } = validateSettings({ trustedCertificates: ['MIIBAA==', 'MIIBAA==', 'not base64!', 7] });
+    expect(settings.trustedCertificates).toEqual(['MIIBAA==']);
+    expect(problems).toEqual(['trustedCertificates']);
+    expect(validateSettings({ certificateFile: 5 }).problems).toEqual(['certificateFile']);
+  });
+
+  it("can't change the certificate file or the trusted list from the Settings screen", () => {
+    const current = validateSettings({ trustedCertificates: ['MIIBAA=='], certificateFile: 'C:\\me.pfx' }).settings;
+    const sneaky = { theme: 'dark', trustedCertificates: ['MIIBBB=='], certificateFile: 'C:\\other.pfx' } as Parameters<typeof applyChange>[1];
+    const next = applyChange(current, sneaky);
+    expect(next).toMatchObject({ theme: 'dark', trustedCertificates: ['MIIBAA=='], certificateFile: 'C:\\me.pfx' });
   });
 
   it('falls back to defaults for invalid values and lists each one', () => {
