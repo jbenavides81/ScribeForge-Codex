@@ -32,6 +32,22 @@ To unlock, type the password, or click **Use the recovery code instead**. After 
 
 Each document's title comes from the PDF's own title, or its file name. Click a document to change its title, give it labels (separated with commas) and write a note. **Label** and **Order** above the list help you find things.
 
+## Searching
+
+Type in **Search the Archive** and press Enter or click **Search**:
+
+| Type | To find pages with |
+|---|---|
+| `lease rent` | both words, anywhere on the page |
+| `"lease agreement"` | those words together, in that order |
+| `insur*` | words starting that way: insured, insurance, insurer |
+
+Capital letters and accents don't matter: `cafe` finds Café. Results are listed by document, best first, with the pages found and the matching words picked out. Click a page to open the document there. **Label**, **Added** and **Show voided documents** narrow the results; voided documents are left out unless you ask for them.
+
+Search reads each page's text when a document is added. Pages that are only pictures, such as scans, have no text, so search can't find words on them: they're listed under **Pages without text**.
+
+The search index is encrypted like everything else in the vault. If it's ever damaged, ScribeForge says so and makes it again from the documents. **Rebuild the search index…** does the same on request. Documents with a password ask for it while their text is read again.
+
 ## Using a document
 
 - **Open** (or double-click it) opens a copy in ScribeForge, decrypted in memory only. You can use every tool on it; saving makes a new file, as always.
@@ -57,4 +73,4 @@ You can also restore a backup on a PC with no vault yet, from the Archive screen
 
 ## Where it's kept
 
-In `%APPDATA%\ScribeForge\Vault` (trial mode has its own). Everything there is encrypted: the database, each stored PDF, and their titles, labels and notes. AES-256-GCM both hides the data and detects any change to it, so a damaged file is refused with a message, never used.
+In `%APPDATA%\ScribeForge\Vault` (trial mode has its own). Everything there is encrypted: the database, the search index, each stored PDF, and their titles, labels and notes. AES-256-GCM both hides the data and detects any change to it, so a damaged file is refused with a message, never used.

@@ -1,7 +1,7 @@
 {
   "name": "scribeforge",
   "productName": "ScribeForge",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "description": "An open-source, offline PDF toolkit for Windows. A BC6 app.",
   "license": "Apache-2.0",
   "author": "BC6",

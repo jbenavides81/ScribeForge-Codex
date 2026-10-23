@@ -10,7 +10,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { safeFileName } from '../engine/names';
 import type { OpenResult, SaveResult } from '../shared/api';
-import type { HistoryCheck, NewDocument, VaultDocument, VaultReply, VaultStatus } from '../shared/vault';
+import type { HistoryCheck, NewDocument, SearchOptions, VaultDocument, VaultReply, VaultStatus } from '../shared/vault';
 import { uniquePath, writeSafely } from './fileWrite';
 import { readPdf } from './files';
 import type { SettingsStore } from './settingsStore';
@@ -67,7 +67,12 @@ export function registerArchive(win: () => BrowserWindow, store: SettingsStore, 
     } catch {
       // A damaged key file: unlocking says so.
     }
-    return { exists, unlocked: vault.unlocked, hasRecoveryCode, ...(vault.unlocked ? vault.size() : {}) };
+    return {
+      exists,
+      unlocked: vault.unlocked,
+      hasRecoveryCode,
+      ...(vault.unlocked ? { ...vault.size(), unindexed: vault.unindexed().length, indexDamaged: vault.searchIndexDamaged } : {}),
+    };
   };
 
   /** Every vault request counts as using ScribeForge. */
@@ -173,6 +178,26 @@ export function registerArchive(win: () => BrowserWindow, store: SettingsStore, 
   });
 
   handle('vault:history', (): VaultReply<HistoryCheck> => reply(() => vault.history()));
+
+  // Search (stop 3b): the window reads each page's text (it never comes from here, which doesn't read PDFs).
+  handle('vault:search', (query: unknown, options: unknown) =>
+    reply(() => {
+      const o = (typeof options === 'object' && options !== null ? options : {}) as SearchOptions;
+      return vault.search(String(query ?? ''), { voided: o.voided === true, label: typeof o.label === 'string' ? o.label : undefined, since: typeof o.since === 'string' ? o.since : undefined });
+    }),
+  );
+  handle('vault:unindexed', () => reply(() => vault.unindexed()));
+  handle('vault:index', (entries: unknown) =>
+    reply(() => {
+      if (!Array.isArray(entries)) throw new VaultError('invalid', 'Nothing to index.');
+      vault.indexDocuments(
+        entries.filter((e): e is { id: string; pageTexts: string[] } => typeof e?.id === 'string' && Array.isArray(e?.pageTexts)).map((e) => ({ id: e.id, pageTexts: e.pageTexts.map(String) })),
+      );
+      return true;
+    }),
+  );
+  handle('vault:clear-index', () => reply(() => vault.clearIndex()));
+  handle('vault:textless', () => reply(() => vault.textless()));
 
   handle('vault:save-text', async (suggestedName: unknown, text: unknown): Promise<SaveResult> => {
     if (typeof text !== 'string') return { ok: false, reason: 'failed', message: 'Nothing to save.' };

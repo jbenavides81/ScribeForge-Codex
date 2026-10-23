@@ -16,6 +16,7 @@ import { PagesView } from './pages/PagesView';
 import { checkDocumentSignatures, emptySignatureBoxes, inspectDocument } from './pages/engineClient';
 import { useSaving, type NewFileReason, type ReviewAnswer, type ReviewRequest, type SignChoices } from './pages/saving';
 import type { NewDocument, VaultDocument, VaultStatus } from '../../shared/vault';
+import { pageTexts } from './archive/text';
 import { firstPagePicture } from './archive/thumbnail';
 import { Archive } from './screens/Archive';
 import { emptyRedact, markLabel, marksByPage, redactReducer, type RedactMark } from './redact/redactState';
@@ -48,6 +49,8 @@ interface OpenDocument {
   permissions: number[] | null;
   /** Opened from the Archive: it's decrypted, so it closes when the vault locks. */
   fromVault?: boolean;
+  /** The page to show first (a search result). */
+  startPage?: number;
 }
 
 /** The open document's details and what it carries, read in the background after opening. */
@@ -263,7 +266,7 @@ export function App() {
     release([current?.pdf, ...extra.map((s) => s.pdf)]);
   }, []);
 
-  const handleResult = useCallback(async (result: OpenResult, options: { fromVault?: boolean } = {}) => {
+  const handleResult = useCallback(async (result: OpenResult, options: { fromVault?: boolean; startPage?: number } = {}) => {
     setRecent(await api.recentFiles());
     if (!result.ok) {
       if (result.reason !== 'cancelled') setMessage(openFailureMessage(result));
@@ -277,7 +280,7 @@ export function App() {
       const previous = docRef.current;
       const extra = addedRef.current;
       const id = ++nextDocId.current;
-      setDoc({ id, pdf, name: file.name, path: file.path, bytes: file.bytes, password: used, permissions, fromVault: options.fromVault });
+      setDoc({ id, pdf, name: file.name, path: file.path, bytes: file.bytes, password: used, permissions, fromVault: options.fromVault, startPage: options.startPage });
       setAdded([]);
       dispatch({ type: 'reset', tiles: pageTiles(`doc${id}`, pdf.numPages) });
       annotDispatch({ type: 'reset' });
@@ -533,7 +536,7 @@ export function App() {
       try {
         const meta = (await pdf.getMetadata().catch(() => null)) as { info?: { Title?: unknown } } | null;
         const title = typeof meta?.info?.Title === 'string' && meta.info.Title.trim() ? meta.info.Title.trim() : baseName(file.name);
-        return { fileName: file.name, title, pages: pdf.numPages, bytes: file.bytes, thumbnail: await firstPagePicture(pdf) };
+        return { fileName: file.name, title, pages: pdf.numPages, bytes: file.bytes, thumbnail: await firstPagePicture(pdf), pageTexts: await pageTexts(pdf) };
       } finally {
         void pdf.loadingTask.destroy();
       }
@@ -545,8 +548,26 @@ export function App() {
     }
   }
 
-  const openFromVault = (item: VaultDocument, bytes: Uint8Array) =>
-    void unlessUnsaved(() => handleResult({ ok: true, file: { path: '', name: item.fileName, bytes } }, { fromVault: true }));
+  const openFromVault = (item: VaultDocument, bytes: Uint8Array, page?: number) =>
+    void unlessUnsaved(() => handleResult({ ok: true, file: { path: '', name: item.fileName, bytes } }, { fromVault: true, startPage: page }));
+
+  /** A stored document's page text, for the search index (asking for its password if it has one). Null if it can't be read. */
+  const vaultTexts = async (item: VaultDocument): Promise<string[] | null> => {
+    const opened = await api.vaultOpen(item.id);
+    if (!opened.ok) return null;
+    try {
+      const { pdf } = await loadDocument(opened.value.bytes, askPassword(item.fileName));
+      try {
+        return await pageTexts(pdf);
+      } finally {
+        void pdf.loadingTask.destroy();
+      }
+    } catch {
+      return null;
+    } finally {
+      setPassword(null);
+    }
+  };
 
   /** The open file, for "Add the open file" on the Archive screen. */
   const openFileItem = async (): Promise<NewDocument | null> => {
@@ -558,6 +579,7 @@ export function App() {
       pages: current.pdf.numPages,
       bytes: current.bytes,
       thumbnail: await firstPagePicture(current.pdf),
+      pageTexts: await pageTexts(current.pdf),
     };
   };
 
@@ -675,6 +697,7 @@ export function App() {
               onRefusedLink={(address) => setMessage(`This link can't be opened from ScribeForge: ${address}`)}
               onClose={() => void closeWithCheck()}
               signatureNote={docSignatures?.list?.length ? { text: signaturesSummary(docSignatures.list), onShow: () => setScreen('sign') } : null}
+              startPage={doc.startPage}
               placing={
                 placing
                   ? {
@@ -752,6 +775,7 @@ export function App() {
             openName={doc && !doc.fromVault ? doc.name : null}
             onAddOpen={openFileItem}
             describe={vaultItem}
+            readTexts={vaultTexts}
             onOpen={openFromVault}
             onMessage={setMessage}
             confirm={confirm}

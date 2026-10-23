@@ -4,6 +4,7 @@
 // On disk, in one folder:
 //   vault.json       how the vault key is protected (scrypt settings and the locked copies of the key)
 //   archive.sealed   the database: documents, versions, labels, notes and the history (encrypted)
+//   search.sealed    the search index: each page's text (encrypted); rebuilt from the documents if lost
 //   files\*.sealed   one encrypted file per stored PDF, with a random name
 // While unlocked, the database lives in memory (Electron's own SQLite, A1) and is saved, encrypted,
 // after every change. Locking clears the key and the database from memory. This never reads PDFs:
@@ -27,9 +28,9 @@ import {
   VaultCryptoError,
   type KdfSettings,
 } from './crypto';
-import type { HistoryAction, HistoryCheck, HistoryEntry, NewDocument, VaultDocument } from '../../shared/vault';
+import type { HistoryAction, HistoryCheck, HistoryEntry, NewDocument, SearchOptions, SearchResult, TextlessDocument, VaultDocument } from '../../shared/vault';
 
-export type { HistoryAction, HistoryCheck, HistoryEntry, NewDocument, VaultDocument };
+export type { HistoryAction, HistoryCheck, HistoryEntry, NewDocument, SearchOptions, SearchResult, TextlessDocument, VaultDocument };
 
 export { MIN_VAULT_PASSWORD as MIN_PASSWORD } from '../../shared/vault';
 import { MIN_VAULT_PASSWORD as MIN_PASSWORD } from '../../shared/vault';
@@ -79,6 +80,85 @@ const MIGRATIONS = [
    CREATE TRIGGER history_no_delete BEFORE DELETE ON history BEGIN SELECT RAISE(ABORT, 'The history can''t be changed.'); END;`,
 ];
 
+/** The search index's tables: each page's text (full-text search, FTS5), and which documents are in it. */
+const INDEX_SCHEMA = `CREATE TABLE IF NOT EXISTS indexed (document TEXT PRIMARY KEY, pages INTEGER NOT NULL, textless TEXT NOT NULL);
+  CREATE VIRTUAL TABLE IF NOT EXISTS pages USING fts5(document UNINDEXED, page UNINDEXED, text, tokenize = 'unicode61 remove_diacritics 2');`;
+/** Marks around the matching words in a result's snippet (control characters never left in indexed text). */
+export const MATCH_START = '\u0002';
+export const MATCH_END = '\u0003';
+const MAX_PAGE_TEXT = 200_000;
+const MAX_RESULTS = 200;
+const HITS_SHOWN = 5;
+
+/** One part of a search: a word, an "exact phrase", or the start of a word (insur*). */
+interface SearchPart {
+  /** Folded as the index folds them: small letters, no accents. */
+  words: string[];
+  prefix: boolean;
+}
+
+/** A word as the index compares it: small letters, accents removed (like its unicode61 tokenizer). */
+const fold = (word: string) => word.normalize('NFKD').replace(/\p{M}+/gu, '').toLowerCase();
+
+/** What was typed, as words, "exact phrases" and word starts (insur*). Punctuation only separates words. */
+function searchParts(typed: string): SearchPart[] {
+  const parts: SearchPart[] = [];
+  for (const m of typed.matchAll(/"([^"]*)"?|(\S+)/g)) {
+    const raw = m[1] ?? m[2] ?? '';
+    const words = raw.match(/[\p{L}\p{N}]+/gu) ?? [];
+    if (words.length > 0) parts.push({ words: words.map(fold), prefix: m[2] !== undefined && raw.endsWith('*') });
+  }
+  return parts;
+}
+
+/**
+ * What was typed in the search box, as a full-text query that can't go wrong: every word must be
+ * on the page. Null when there's nothing to search for.
+ */
+export function searchQuery(typed: string): string | null {
+  const parts = searchParts(typed);
+  return parts.length > 0 ? parts.map((p) => `"${p.words.join(' ')}"${p.prefix ? '*' : ''}`).join(' ') : null;
+}
+
+/**
+ * The words around the first match on a page (about a dozen), with each match between
+ * MATCH_START and MATCH_END. Matched the same way the index matches: whole words, phrases in
+ * order, word starts, ignoring case and accents.
+ */
+export function makeSnippet(text: string, typed: string, size = 12): string {
+  const parts = searchParts(typed);
+  const tokens = [...text.matchAll(/[\p{L}\p{N}]+/gu)].map((m) => ({ start: m.index ?? 0, end: (m.index ?? 0) + m[0].length, word: fold(m[0]) }));
+  if (tokens.length === 0) return '';
+  const marks: [number, number][] = [];
+  for (const part of parts) {
+    const n = part.words.length;
+    for (let i = 0; i + n <= tokens.length; i++) {
+      const fits = part.words.every((want, k) => tokens[i + k].word === want || (k === n - 1 && part.prefix && tokens[i + k].word.startsWith(want)));
+      if (fits) marks.push([i, i + n - 1]);
+    }
+  }
+  marks.sort((a, b) => a[0] - b[0]);
+  const from = Math.max(0, (marks[0]?.[0] ?? 0) - Math.floor(size / 3));
+  const to = Math.min(tokens.length - 1, from + size - 1);
+  let pos = from === 0 ? 0 : tokens[from].start;
+  let out = '';
+  for (const [a, b] of marks) {
+    if (b < from || a > to) continue;
+    const start = tokens[Math.max(a, from)].start;
+    const end = tokens[Math.min(b, to)].end;
+    if (start < pos) continue;
+    out += text.slice(pos, start) + MATCH_START + text.slice(start, end) + MATCH_END;
+    pos = end;
+  }
+  out += text.slice(pos, to === tokens.length - 1 ? text.length : tokens[to].end);
+  return `${from > 0 ? '…' : ''}${out}${to < tokens.length - 1 ? '…' : ''}`;
+}
+
+/** A page's text as indexed: no control characters (they mark matches), and not endlessly long. */
+function indexText(text: unknown): string {
+  return typeof text === 'string' ? text.replace(/\p{Cc}+/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, MAX_PAGE_TEXT) : '';
+}
+
 const FILE_NAME = /^[0-9a-f-]{36}\.sealed$/;
 const BACKUP_MAGIC = Buffer.from('SFBACKUP1\n');
 
@@ -97,6 +177,10 @@ export class Vault {
   private readonly now: () => Date;
   private key: Buffer | null = null;
   private db: DatabaseSync | null = null;
+  /** The search index, in memory while unlocked. */
+  private index: DatabaseSync | null = null;
+  /** The index file couldn't be read when unlocking, so it's being rebuilt. */
+  private indexDamaged = false;
   private info: VaultFile | null = null;
 
   constructor(dir: string, options: { cost?: number; now?: () => Date } = {}) {
@@ -111,6 +195,10 @@ export class Vault {
 
   private get archiveFile() {
     return path.join(this.dir, 'archive.sealed');
+  }
+
+  private get searchFile() {
+    return path.join(this.dir, 'search.sealed');
   }
 
   private filePath(file: string) {
@@ -190,8 +278,10 @@ export class Vault {
     this.info = info;
     this.db = new DatabaseSync(':memory:');
     this.migrate(this.db);
+    this.index = this.emptyIndex();
     this.record('vault-made', null, null, code ? { recovery: 'yes' } : {});
     this.save();
+    this.saveIndex();
     this.writeInfo(info);
     return code;
   }
@@ -220,6 +310,7 @@ export class Vault {
     }
     this.key = key;
     this.db = db;
+    this.loadIndex();
     if (kind === 'recovery') {
       this.record('recovery-used', null, null, {});
       this.save();
@@ -227,12 +318,166 @@ export class Vault {
     return true;
   }
 
-  /** Clears the key and the database from memory. */
+  /** Clears the key, the database and the search index from memory. */
   lock(): void {
     this.key?.fill(0);
     this.key = null;
     this.db?.close();
     this.db = null;
+    this.index?.close();
+    this.index = null;
+    this.indexDamaged = false;
+  }
+
+  private emptyIndex(): DatabaseSync {
+    const index = new DatabaseSync(':memory:');
+    index.exec(`PRAGMA secure_delete = ON; ${INDEX_SCHEMA}`);
+    return index;
+  }
+
+  /** Loads the search index; if it's missing or damaged, starts an empty one (the documents can be indexed again). */
+  private loadIndex(): void {
+    const { key, info } = this.requireUnlocked();
+    this.index = this.emptyIndex();
+    this.indexDamaged = false;
+    if (!existsSync(this.searchFile)) return;
+    try {
+      const plain = unseal(subkey(key, info.id, 'search'), 'search', readFileSync(this.searchFile));
+      const index = new DatabaseSync(':memory:');
+      index.deserialize(plain);
+      plain.fill(0);
+      index.exec(`PRAGMA secure_delete = ON; ${INDEX_SCHEMA}`);
+      this.index.close();
+      this.index = index;
+    } catch {
+      this.indexDamaged = true;
+    }
+  }
+
+  private requireIndex(): DatabaseSync {
+    this.requireUnlocked();
+    if (!this.index) throw new VaultError('locked', 'The vault is locked.');
+    return this.index;
+  }
+
+  private saveIndex(): void {
+    const { key, info } = this.requireUnlocked();
+    const image = this.requireIndex().serialize();
+    try {
+      writeSafely(this.searchFile, seal(subkey(key, info.id, 'search'), 'search', image));
+    } finally {
+      image.fill(0);
+    }
+  }
+
+  /** Puts a document's pages in the search index, replacing what was there for it. */
+  private indexPages(id: string, pageTexts: unknown[]): void {
+    const index = this.requireIndex();
+    const texts = pageTexts.map(indexText);
+    const textless = texts.flatMap((t, i) => (t ? [] : [i + 1]));
+    index.prepare('DELETE FROM pages WHERE document = ?').run(id);
+    index.prepare('INSERT OR REPLACE INTO indexed (document, pages, textless) VALUES (?, ?, ?)').run(id, texts.length, JSON.stringify(textless));
+    const insert = index.prepare('INSERT INTO pages (document, page, text) VALUES (?, ?, ?)');
+    texts.forEach((text, i) => {
+      if (text) insert.run(id, i + 1, text);
+    });
+  }
+
+  /** Indexes documents whose page text the window has read (as when catching up, or rebuilding). */
+  indexDocuments(entries: { id: string; pageTexts: string[] }[]): void {
+    const index = this.requireIndex();
+    const known = new Set(this.documents().map((d) => d.id));
+    index.exec('BEGIN');
+    try {
+      for (const e of entries) if (known.has(e.id) && Array.isArray(e.pageTexts)) this.indexPages(e.id, e.pageTexts);
+      index.exec('COMMIT');
+    } catch (error) {
+      index.exec('ROLLBACK');
+      throw error;
+    }
+    this.saveIndex();
+  }
+
+  /** Documents not in the search index yet (added before search existed, or after the index was lost). */
+  unindexed(): string[] {
+    const index = this.requireIndex();
+    const done = new Set((index.prepare('SELECT document FROM indexed').all() as { document: string }[]).map((r) => r.document));
+    return this.documents()
+      .map((d) => d.id)
+      .filter((id) => !done.has(id));
+  }
+
+  /** Empties the search index, so every document is indexed again. */
+  clearIndex(): void {
+    this.requireIndex().exec('DELETE FROM pages; DELETE FROM indexed;');
+    this.indexDamaged = false;
+    this.saveIndex();
+  }
+
+  /** Whether the index file couldn't be read when the vault was unlocked. */
+  get searchIndexDamaged(): boolean {
+    return this.indexDamaged;
+  }
+
+  /**
+   * Finds documents whose pages have the words, phrases or word starts typed, best first, with
+   * the pages and the matching words. Voided documents only when asked for.
+   */
+  search(typed: string, options: SearchOptions = {}): SearchResult[] {
+    const index = this.requireIndex();
+    const query = searchQuery(typed);
+    if (!query) return [];
+    // First the matching pages, best first; then the words around each match, only for the pages shown.
+    let rows: { id: number; document: string; page: number }[];
+    try {
+      rows = index.prepare('SELECT rowid AS id, document, page FROM pages WHERE pages MATCH ? ORDER BY bm25(pages) LIMIT 5000').all(query) as typeof rows;
+    } catch {
+      throw new VaultError('invalid', "That search couldn't be read. Try plain words.");
+    }
+    const docs = new Map(this.documents().map((d) => [d.id, d]));
+    const since = options.since ? new Date(options.since).getTime() : undefined;
+    const results = new Map<string, SearchResult>();
+    const shown = new Map<number, SearchResult['hits'][number]>();
+    for (const row of rows) {
+      const document = docs.get(row.document);
+      if (!document || (document.voided && !options.voided)) continue;
+      if (options.label && !document.labels.includes(options.label)) continue;
+      if (since !== undefined && new Date(document.added).getTime() < since) continue;
+      let result = results.get(row.document);
+      if (!result) {
+        if (results.size >= MAX_RESULTS) continue;
+        result = { document, hits: [], pagesFound: 0 };
+        results.set(row.document, result);
+      }
+      result.pagesFound++;
+      if (result.hits.length < HITS_SHOWN) {
+        const hit = { page: Number(row.page), snippet: '' };
+        result.hits.push(hit);
+        shown.set(Number(row.id), hit);
+      }
+    }
+    // The shown pages' text, looked up directly (quick), and the words around each match.
+    const ids = [...shown.keys()];
+    for (let i = 0; i < ids.length; i += 500) {
+      const batch = ids.slice(i, i + 500);
+      const texts = index.prepare(`SELECT rowid AS id, text FROM pages WHERE rowid IN (${batch.map(() => '?').join(',')})`).all(...batch) as { id: number; text: string }[];
+      for (const t of texts) {
+        const hit = shown.get(Number(t.id));
+        if (hit) hit.snippet = makeSnippet(t.text, typed);
+      }
+    }
+    for (const r of results.values()) r.hits.sort((a, b) => a.page - b.page);
+    return [...results.values()];
+  }
+
+  /** Documents with pages that have no text (scans, usually): search can't find words on them. */
+  textless(): TextlessDocument[] {
+    const index = this.requireIndex();
+    const docs = new Map(this.documents().map((d) => [d.id, d]));
+    return (index.prepare("SELECT document, textless FROM indexed WHERE textless != '[]'").all() as { document: string; textless: string }[]).flatMap((r) => {
+      const doc = docs.get(r.document);
+      return doc ? [{ id: doc.id, title: doc.title, pages: JSON.parse(r.textless) as number[], voided: !!doc.voided }] : [];
+    });
   }
 
   private migrate(db: DatabaseSync): void {
@@ -336,7 +581,7 @@ export class Vault {
     const documents = (db.prepare('SELECT count(*) AS n FROM documents').get() as { n: number }).n;
     let bytes = 0;
     const files = path.join(this.dir, 'files');
-    for (const f of [this.infoFile, this.archiveFile, ...(existsSync(files) ? readdirSync(files).map((n) => path.join(files, n)) : [])]) {
+    for (const f of [this.infoFile, this.archiveFile, this.searchFile, ...(existsSync(files) ? readdirSync(files).map((n) => path.join(files, n)) : [])]) {
       try {
         bytes += statSync(f).size;
       } catch {
@@ -381,6 +626,10 @@ export class Vault {
       throw error;
     }
     this.save();
+    if (Array.isArray(doc.pageTexts)) {
+      this.indexPages(id, doc.pageTexts);
+      this.saveIndex();
+    }
     return this.document(id);
   }
 
@@ -497,6 +746,10 @@ export class Vault {
       throw error;
     }
     this.save();
+    const index = this.requireIndex();
+    index.prepare('DELETE FROM pages WHERE document = ?').run(id);
+    index.prepare('DELETE FROM indexed WHERE document = ?').run(id);
+    this.saveIndex();
     for (const file of files) rmSync(this.filePath(file), { force: true });
   }
 
@@ -535,7 +788,8 @@ export class Vault {
     const { key, info } = this.requireUnlocked();
     this.record('backup-made', null, null, {});
     this.save();
-    const names = ['vault.json', 'archive.sealed', ...readdirSync(path.join(this.dir, 'files')).filter((n) => FILE_NAME.test(n)).map((n) => `files/${n}`)];
+    if (this.index) this.saveIndex();
+    const names = ['vault.json', 'archive.sealed', ...(existsSync(this.searchFile) ? ['search.sealed'] : []), ...readdirSync(path.join(this.dir, 'files')).filter((n) => FILE_NAME.test(n)).map((n) => `files/${n}`)];
     const parts = names.map((name) => ({ name, bytes: readFileSync(path.join(this.dir, name)) }));
     const manifest = Buffer.from(JSON.stringify({ created: this.now().toISOString(), vault: info.id, files: parts.map((p) => ({ name: p.name, size: p.bytes.length })) }));
     const length = Buffer.alloc(4);
@@ -564,7 +818,7 @@ export class Vault {
     const parts = new Map<string, Buffer>();
     let at = manifestStart + manifestLength;
     for (const f of manifest.files ?? []) {
-      const ok = f.name === 'vault.json' || f.name === 'archive.sealed' || (f.name.startsWith('files/') && FILE_NAME.test(f.name.slice(6)));
+      const ok = ['vault.json', 'archive.sealed', 'search.sealed'].includes(f.name) || (f.name.startsWith('files/') && FILE_NAME.test(f.name.slice(6)));
       if (!ok || !Number.isSafeInteger(f.size) || f.size < 0 || at + f.size > bytes.length - 32) throw damaged();
       parts.set(f.name, bytes.subarray(at, at + f.size));
       at += f.size;
@@ -592,6 +846,7 @@ export class Vault {
       db.close();
       if (needed.some((n) => !parts.has(n))) throw damaged();
       for (const [name, part] of parts) if (name.startsWith('files/')) unseal(subkey(key, info.id, 'files'), `file:${name.slice(6, -7)}`, part);
+      if (parts.has('search.sealed')) unseal(subkey(key, info.id, 'search'), 'search', parts.get('search.sealed') as Buffer);
     } catch {
       throw damaged();
     }

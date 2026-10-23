@@ -17,6 +17,37 @@ export interface VaultDocument {
   voided: { at: string; reason: string } | null;
 }
 
+export interface SearchHit {
+  /** 1-based. */
+  page: number;
+  /** Words around the match; the matching words are between MATCH_START and MATCH_END (\u0002 and \u0003). */
+  snippet: string;
+}
+
+export interface SearchResult {
+  document: VaultDocument;
+  /** The first few pages found, in page order. */
+  hits: SearchHit[];
+  /** How many of its pages matched. */
+  pagesFound: number;
+}
+
+export interface SearchOptions {
+  /** Include voided documents. */
+  voided?: boolean;
+  label?: string;
+  /** Only documents added since then (ISO). */
+  since?: string;
+}
+
+/** A document with pages that have no text, so search can't find words on them. */
+export interface TextlessDocument {
+  id: string;
+  title: string;
+  pages: number[];
+  voided: boolean;
+}
+
 export interface NewDocument {
   fileName: string;
   title: string;
@@ -24,6 +55,8 @@ export interface NewDocument {
   bytes: Uint8Array;
   /** A small picture of the first page (PNG), if the window could draw one. */
   thumbnail?: Uint8Array;
+  /** Each page's text, read in the window, for the search index. */
+  pageTexts?: string[];
 }
 
 export type HistoryAction =
@@ -69,6 +102,10 @@ export interface VaultStatus {
   /** Only while unlocked. */
   documents?: number;
   bytes?: number;
+  /** Documents not in the search index yet. */
+  unindexed?: number;
+  /** The search index couldn't be read, so it's being rebuilt. */
+  indexDamaged?: boolean;
 }
 
 /** A vault request's answer: what was asked for, or a plain message (and whether it's because the vault is locked). */

@@ -1,6 +1,6 @@
 import type { CertificateSummary, TrustAnchor } from '../engine/sign/types';
 import type { RedactionDpi, Settings, TextSize } from './settings';
-import type { HistoryCheck, NewDocument, VaultDocument, VaultLockMinutes, VaultReply, VaultStatus } from './vault';
+import type { HistoryCheck, NewDocument, SearchOptions, SearchResult, TextlessDocument, VaultDocument, VaultLockMinutes, VaultReply, VaultStatus } from './vault';
 import type { ThemeId } from './themes';
 
 /** A file the main process read for the screens. */
@@ -181,6 +181,16 @@ export interface ScribeForgeApi {
   /** Checks the chosen backup with its password or recovery code, and with `restore`, replaces the vault with it. */
   vaultRestoreBackup(secret: string, kind: 'password' | 'recovery', restore: boolean): Promise<VaultReply<{ created: string; documents: number }>>;
   vaultForgetBackup(): void;
+  /** Searches the vault's documents (stop 3b). */
+  vaultSearch(query: string, options: SearchOptions): Promise<VaultReply<SearchResult[]>>;
+  /** Documents not in the search index yet. */
+  vaultUnindexed(): Promise<VaultReply<string[]>>;
+  /** Puts documents' page text (read in the window) in the search index. */
+  vaultIndex(entries: { id: string; pageTexts: string[] }[]): Promise<VaultReply<boolean>>;
+  /** Empties the search index, so every document is indexed again. */
+  vaultClearIndex(): Promise<VaultReply<void>>;
+  /** Documents with pages that have no text (scans). */
+  vaultTextless(): Promise<VaultReply<TextlessDocument[]>>;
   /** Called when the vault locks: idle, Windows locked, sleep or the Lock button. */
   onVaultLocked(listener: (why: string) => void): () => void;
 }

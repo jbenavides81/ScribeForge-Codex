@@ -44,7 +44,7 @@ describe('making and opening a vault', () => {
     addSample(vault);
     vault.lock();
     const files = filesIn(vaultDir());
-    expect(files.map((f) => path.relative(vaultDir(), f).split(path.sep)[0]).sort()).toEqual(['archive.sealed', 'files', 'vault.json']);
+    expect(files.map((f) => path.relative(vaultDir(), f).split(path.sep)[0]).sort()).toEqual(['archive.sealed', 'files', 'search.sealed', 'vault.json']);
     for (const file of files) {
       const bytes = readFileSync(file);
       for (const secret of [...SECRETS, PASSWORD]) expect(bytes.includes(Buffer.from(secret)), `${secret} in ${file}`).toBe(false);

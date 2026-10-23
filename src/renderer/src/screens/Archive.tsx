@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { OpenedFile } from '../../../shared/api';
-import { MIN_VAULT_PASSWORD, type HistoryCheck, type NewDocument, type VaultDocument, type VaultStatus } from '../../../shared/vault';
+import { MIN_VAULT_PASSWORD, type HistoryCheck, type NewDocument, type SearchResult, type TextlessDocument, type VaultDocument, type VaultStatus } from '../../../shared/vault';
 import { historyFile, historyState, historyText, lockedBecause } from '../archive/describe';
 import { ChangePasswordDialog, NewRecoveryCodeDialog, ReasonDialog, RecoveryCodeDialog, RestoreBackupDialog } from '../archive/VaultDialogs';
 import { Icon } from '../components/Icon';
@@ -28,6 +28,31 @@ function Thumb({ id }: { id: string }) {
   }, [id]);
   return <span className="sf-vault-thumb">{url && <img src={url} alt="" />}</span>;
 }
+
+/** A search result's words around the match, with the matching words picked out. */
+function Snippet({ text }: { text: string }) {
+  const parts = text.split(/(\u0002[^\u0003]*\u0003)/);
+  return (
+    <span className="sf-snippet">
+      {parts.map((part, i) =>
+        part.startsWith('\u0002') ? (
+          <mark key={i} className="sf-match">
+            {part.slice(1, -1)}
+          </mark>
+        ) : (
+          <span key={i}>{part}</span>
+        ),
+      )}
+    </span>
+  );
+}
+
+/** "Added since": any time, or the last month or year. */
+const SINCE: { id: string; label: string; days?: number }[] = [
+  { id: '', label: 'Any time' },
+  { id: '30', label: 'In the last 30 days', days: 30 },
+  { id: '365', label: 'In the last 12 months', days: 365 },
+];
 
 /** The selected document: its title, labels and note (saved as they're changed), and what can be done with it. */
 function DocumentPanel({
@@ -119,6 +144,7 @@ export function Archive({
   openName,
   onAddOpen,
   describe,
+  readTexts,
   onOpen,
   onMessage,
   confirm,
@@ -131,7 +157,10 @@ export function Archive({
   onAddOpen: () => Promise<NewDocument | null>;
   /** Reads a chosen PDF (asking for its password if it has one) into what the vault stores. */
   describe: (file: OpenedFile) => Promise<NewDocument | null>;
-  onOpen: (doc: VaultDocument, bytes: Uint8Array) => void;
+  /** A stored document's page text, for the search index; null if it can't be read. */
+  readTexts: (doc: VaultDocument) => Promise<string[] | null>;
+  /** Opens a stored document, at a page when given. */
+  onOpen: (doc: VaultDocument, bytes: Uint8Array, page?: number) => void;
   onMessage: (text: string) => void;
   confirm: (request: ConfirmRequest) => Promise<boolean>;
   onStatus: (status: VaultStatus) => void;
@@ -149,6 +178,14 @@ export function Archive({
   const [code, setCode] = useState<string | null>(null);
   const [dialog, setDialog] = useState<'password' | 'code' | 'void' | 'erase' | null>(null);
   const [restoring, setRestoring] = useState<string | null>(null);
+  const [since, setSince] = useState('');
+  const [query, setQuery] = useState('');
+  const [searched, setSearched] = useState<{ query: string; results: SearchResult[] } | null>(null);
+  const [textless, setTextless] = useState<TextlessDocument[]>([]);
+  const [indexing, setIndexing] = useState<{ done: number; total: number } | null>(null);
+  /** Documents whose text couldn't be read this session (a password not given, or damaged): not asked for again. */
+  const skipped = useRef(new Set<string>());
+  const indexingNow = useRef(false);
 
   // Making and unlocking.
   const [password, setPassword] = useState('');
@@ -170,6 +207,8 @@ export function Archive({
     if (list.ok) setDocs(list.value);
     const h = await api.vaultHistory();
     if (h.ok) setHistory(h.value);
+    const t = await api.vaultTextless();
+    if (t.ok) setTextless(t.value);
   }, [onStatus]);
 
   useEffect(() => {
@@ -180,8 +219,63 @@ export function Archive({
     if (!lockSignal) return;
     setNote(lockedBecause(lockSignal.why));
     setSelected(null);
+    setSearched(null);
+    skipped.current.clear();
     void refresh();
   }, [lockSignal, refresh]);
+
+  /**
+   * Indexes documents that aren't in the search index yet (added before search existed, or after
+   * the index was lost or rebuilt), a few at a time, reading their text here in the window.
+   */
+  const catchUp = useCallback(async () => {
+    if (indexingNow.current) return;
+    indexingNow.current = true;
+    try {
+      const pending = await api.vaultUnindexed();
+      const list = await api.vaultDocuments();
+      if (!pending.ok || !list.ok) return;
+      const todo = list.value.filter((d) => pending.value.includes(d.id) && !skipped.current.has(d.id));
+      if (todo.length === 0) return;
+      let batch: { id: string; pageTexts: string[] }[] = [];
+      for (const [i, doc] of todo.entries()) {
+        setIndexing({ done: i, total: todo.length });
+        const texts = await readTexts(doc);
+        if (texts) batch.push({ id: doc.id, pageTexts: texts });
+        else skipped.current.add(doc.id);
+        if (batch.length >= 10 || i === todo.length - 1) {
+          const done = batch.length > 0 ? await api.vaultIndex(batch) : null;
+          batch = [];
+          if (done && !done.ok) return;
+        }
+      }
+    } finally {
+      indexingNow.current = false;
+      setIndexing(null);
+    }
+    await refresh();
+  }, [readTexts, refresh]);
+
+  useEffect(() => {
+    if (status?.unlocked && (status.unindexed ?? 0) > 0) void catchUp();
+  }, [status, catchUp]);
+
+  const runSearch = async (text: string) => {
+    if (!text.trim()) return setSearched(null);
+    const days = SINCE.find((s) => s.id === since)?.days;
+    const result = await api.vaultSearch(text, {
+      voided: showVoided,
+      label: label || undefined,
+      since: days ? new Date(Date.now() - days * 86_400_000).toISOString() : undefined,
+    });
+    if (!result.ok) return failed(result.message, result.locked);
+    setSearched({ query: text, results: result.value });
+  };
+
+  // The filters apply to a search already shown (it runs again when they change).
+  useEffect(() => {
+    if (searched) void runSearch(searched.query);
+  }, [label, since, showVoided]);
 
   /** Shows a vault reply's message, and refreshes if the vault turned out to be locked. */
   const failed = (message: string, locked: boolean) => {
@@ -253,10 +347,24 @@ export function Archive({
     await refresh();
   };
 
-  const open = async (doc: VaultDocument) => {
+  const open = async (doc: VaultDocument, page?: number) => {
     const result = await api.vaultOpen(doc.id);
     if (!result.ok) return failed(result.message, result.locked);
-    onOpen(doc, result.value.bytes);
+    onOpen(doc, result.value.bytes, page);
+  };
+
+  const rebuild = async () => {
+    const ok = await confirm({
+      title: 'Rebuild the search index?',
+      message: "ScribeForge reads every document's text again and makes a new index. Documents with a password ask for it again. Search works again as each one is done.",
+      confirmLabel: 'Rebuild it',
+    });
+    if (!ok) return;
+    skipped.current.clear();
+    const result = await api.vaultClearIndex();
+    if (!result.ok) return failed(result.message, result.locked);
+    setSearched(null);
+    await refresh();
   };
 
   const saveCopy = async (doc: VaultDocument) => {
@@ -289,8 +397,10 @@ export function Archive({
 
   const all = docs ?? [];
   const labels = useMemo(() => [...new Set(all.flatMap((d) => d.labels))].sort((a, b) => a.localeCompare(b)), [all]);
+  const sinceDays = SINCE.find((s) => s.id === since)?.days;
+  const sinceTime = sinceDays ? Date.now() - sinceDays * 86_400_000 : 0;
   const shown = all
-    .filter((d) => (showVoided ? true : !d.voided) && (!label || d.labels.includes(label)))
+    .filter((d) => (showVoided ? true : !d.voided) && (!label || d.labels.includes(label)) && new Date(d.added).getTime() >= sinceTime)
     .sort((a, b) => (sort === 'title' ? a.title.localeCompare(b.title) : b.added.localeCompare(a.added)));
   const current = all.find((d) => d.id === selected) ?? null;
 
@@ -454,8 +564,38 @@ export function Archive({
         </p>
       )}
 
+      {indexing && (
+        <p className="sf-muted" role="status" data-testid="vault-indexing">
+          Getting documents ready for search: {indexing.done} of {indexing.total}…
+        </p>
+      )}
+      {status.indexDamaged && !indexing && <p className="sf-banner sf-notice">The search index couldn't be read, so it was made again.</p>}
+
       {view === 'documents' ? (
         <>
+          <form
+            className="sf-vault-search"
+            role="search"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void runSearch(query);
+            }}
+          >
+            <Icon name="search" size={18} />
+            <input
+              type="search"
+              aria-label="Search the Archive"
+              placeholder='Words, "an exact phrase", or the start of a word*'
+              value={query}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                if (!e.target.value) setSearched(null);
+              }}
+            />
+            <button type="submit" className="sf-button" disabled={!query.trim()}>
+              Search
+            </button>
+          </form>
           <div className="sf-vault-filters">
             <label className="sf-field">
               <span>Label</span>
@@ -475,12 +615,55 @@ export function Archive({
                 <option value="title">By title</option>
               </select>
             </label>
+            <label className="sf-field">
+              <span>Added</span>
+              <select value={since} onChange={(e) => setSince(e.target.value)}>
+                {SINCE.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+            </label>
             <label className="sf-choice">
               <input type="checkbox" checked={showVoided} onChange={(e) => setShowVoided(e.target.checked)} />
               <span>Show voided documents</span>
             </label>
           </div>
-          {all.length === 0 ? (
+          {searched ? (
+            <section className="sf-section" aria-label="Search results" data-testid="search-results">
+              <p data-testid="search-summary">
+                {searched.results.length === 0
+                  ? `Nothing found for ${searched.query}.`
+                  : `Found in ${plural(searched.results.length, 'document')}${searched.results.length === 200 ? ' (the first 200 shown)' : ''}.`}
+              </p>
+              <ul className="sf-search-results">
+                {searched.results.map((r) => (
+                  <li key={r.document.id} data-testid="search-result">
+                    <button type="button" className="sf-link-button sf-strong" onClick={() => void open(r.document, r.hits[0]?.page)}>
+                      {r.document.title}
+                    </button>
+                    <span className="sf-muted">
+                      {' '}
+                      · {r.pagesFound === 1 ? '1 page matches' : `${r.pagesFound} pages match`}
+                      {r.document.voided ? ' · Voided' : ''}
+                    </span>
+                    <ul>
+                      {r.hits.map((h) => (
+                        <li key={h.page}>
+                          <button type="button" className="sf-link-button" aria-label={`Open ${r.document.title} at page ${h.page}`} onClick={() => void open(r.document, h.page)}>
+                            Page {h.page}
+                          </button>{' '}
+                          <Snippet text={h.snippet} />
+                        </li>
+                      ))}
+                      {r.pagesFound > r.hits.length && <li className="sf-muted">and {plural(r.pagesFound - r.hits.length, 'more page')}</li>}
+                    </ul>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : all.length === 0 ? (
             <p data-testid="vault-empty">The vault is empty. Add PDFs to keep encrypted copies of them here.</p>
           ) : shown.length === 0 ? (
             <p>No documents match.</p>
@@ -522,6 +705,23 @@ export function Archive({
               )}
             </div>
           )}
+          {textless.filter((t) => showVoided || !t.voided).length > 0 && (
+            <section className="sf-section" aria-labelledby="vault-textless" data-testid="vault-textless">
+              <h2 id="vault-textless">Pages without text</h2>
+              <p className="sf-muted">
+                These pages have no text, usually because they're scans (pictures of paper), so search can't find words on them.
+              </p>
+              <ul className="sf-carries-items">
+                {textless
+                  .filter((t) => showVoided || !t.voided)
+                  .map((t) => (
+                    <li key={t.id}>
+                      {t.title}: {t.pages.length === 1 ? 'page' : 'pages'} {t.pages.join(', ')}
+                    </li>
+                  ))}
+              </ul>
+            </section>
+          )}
         </>
       ) : (
         <section className="sf-section" aria-label="History" data-testid="vault-history">
@@ -559,6 +759,9 @@ export function Archive({
           </button>
           <button type="button" className="sf-button" onClick={() => setDialog('code')}>
             {status.hasRecoveryCode ? 'Make a new recovery code…' : 'Make a recovery code…'}
+          </button>
+          <button type="button" className="sf-button" onClick={() => void rebuild()} disabled={indexing !== null}>
+            Rebuild the search index…
           </button>
         </div>
         <p className="sf-muted">A backup is one encrypted file. Keep it somewhere other than this PC, such as a USB drive: the password (or recovery code) opens it.</p>

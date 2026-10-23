@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { MakeCertificateRequest, MenuCommand, SaveBesideRequest, SaveManyRequest, SaveRequest, ScribeForgeApi, SettingsChange } from '../shared/api';
-import type { NewDocument } from '../shared/vault';
+import type { NewDocument, SearchOptions } from '../shared/vault';
 
 // The only things the screens can ask the rest of the app to do.
 const api: ScribeForgeApi = {
@@ -58,6 +58,11 @@ const api: ScribeForgeApi = {
   vaultChooseBackup: () => ipcRenderer.invoke('vault:choose-backup'),
   vaultRestoreBackup: (secret: string, kind: 'password' | 'recovery', restore: boolean) => ipcRenderer.invoke('vault:restore-backup', secret, kind, restore),
   vaultForgetBackup: () => ipcRenderer.send('vault:forget-backup'),
+  vaultSearch: (query: string, options: SearchOptions) => ipcRenderer.invoke('vault:search', query, options),
+  vaultUnindexed: () => ipcRenderer.invoke('vault:unindexed'),
+  vaultIndex: (entries: { id: string; pageTexts: string[] }[]) => ipcRenderer.invoke('vault:index', entries),
+  vaultClearIndex: () => ipcRenderer.invoke('vault:clear-index'),
+  vaultTextless: () => ipcRenderer.invoke('vault:textless'),
   onVaultLocked: (listener: (why: string) => void) => {
     const handler = (_event: unknown, why: string) => listener(why);
     ipcRenderer.on('vault:locked', handler);

@@ -753,3 +753,12 @@ input[type='checkbox']:checked::before {
 .sf-vault-history { padding-left: 2.5rem; }
 .sf-vault-history li { margin: 0.25rem 0; overflow-wrap: anywhere; }
 .sf-recovery-code { margin: 1rem 0; padding: 0.75rem; text-align: center; font-size: 1.25rem; font-weight: 600; letter-spacing: 0.08em; border: 1px solid var(--sf-outline); border-radius: 6px; }
+
+/* Archive search: the box, and results with the matching words picked out. */
+.sf-vault-search { display: flex; align-items: center; gap: 0.5rem; margin-top: 1rem; max-width: 40rem; }
+.sf-vault-search input { flex: 1; }
+.sf-search-results { margin: 0.5rem 0 0; padding: 0; list-style: none; }
+.sf-search-results > li { padding: 0.5rem 0; border-top: 1px solid var(--sf-line); overflow-wrap: anywhere; }
+.sf-search-results ul { margin: 0.25rem 0 0; padding-left: 1.25rem; list-style: none; }
+.sf-search-results ul li { margin: 0.2rem 0; }
+.sf-match { background: var(--sf-selection); color: var(--sf-selection-text); border-radius: 2px; }

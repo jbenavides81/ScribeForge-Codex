@@ -268,6 +268,11 @@ test('screenshots of the Archive in every theme', async ({}, info) => {
     await goToArchive(win);
     await item(win, 'CARRIES-OLD-TITLE').click();
     await shot('documents');
+    await screen(win).getByLabel('Search the Archive').fill('anvil');
+    await screen(win).getByRole('button', { name: 'Search', exact: true }).click();
+    await screen(win).getByTestId('search-results').waitFor();
+    await shot('search');
+    await screen(win).getByLabel('Search the Archive').fill('');
     await screen(win).getByRole('radio', { name: 'History' }).click();
     await shot('history');
     await screen(win).getByRole('radio', { name: 'Documents' }).click();
@@ -281,7 +286,7 @@ test('screenshots of the Archive in every theme', async ({}, info) => {
   const scale = 0.3;
   const w = Math.round(1280 * scale);
   const h = Math.round(800 * scale);
-  const columns = 3;
+  const columns = 4;
   const sheet = createCanvas(w * columns + 10 * (columns + 1), (h + 10) * rows.length + 10);
   const g = sheet.getContext('2d');
   g.fillStyle = '#808080';

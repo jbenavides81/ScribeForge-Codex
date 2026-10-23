@@ -84,6 +84,7 @@ export function DocumentView({
   onClose,
   signatureNote,
   placing,
+  startPage,
 }: {
   pdf: PdfDocument;
   name: string;
@@ -116,6 +117,8 @@ export function DocumentView({
   signatureNote: { text: string; onShow: () => void } | null;
   /** Drawing a signature's box: the box, on a page as it's shown, or cancelled. */
   placing: { onPlaced: (page: number, rect: Rect, rotation: Rotation) => void; onCancel: () => void } | null;
+  /** The page to show first (a search result in the Archive), when not the first. */
+  startPage?: number;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<PDFViewer | null>(null);
@@ -173,6 +176,7 @@ export function DocumentView({
     linkService.setViewer(viewer);
     eventBus.on('pagesinit', () => {
       viewer.currentScaleValue = 'page-width';
+      if (startPage && startPage > 1) viewer.currentPageNumber = Math.min(startPage, pdf.numPages);
       container.dataset.ready = 'true';
     });
     eventBus.on('pagechanging', ({ pageNumber }: { pageNumber: number }) => {

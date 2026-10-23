@@ -475,6 +475,16 @@ async function redaction() {
   return doc.save();
 }
 
+/** Archive search (stop 3b): one page with words, and one with only a drawing (as a scan has no text). */
+async function noText() {
+  const doc = await PDFDocument.create();
+  doc.setTitle('Scanned and typed');
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  lines(doc.addPage([612, 792]), font, ['This page has words on it: QUILLWORD.']);
+  doc.addPage([612, 792]).drawRectangle({ x: 100, y: 300, width: 400, height: 300, borderWidth: 2 });
+  return doc.save();
+}
+
 const normalBytes = await normal();
 const files = {
   'normal.pdf': normalBytes,
@@ -490,6 +500,7 @@ const files = {
   'text-styles.pdf': await textStyles(),
   'redaction.pdf': await redaction(),
   'patterns.pdf': await patterns(),
+  'no-text.pdf': await noText(),
   // Cut off halfway through.
   'damaged-truncated.pdf': normalBytes.slice(0, Math.floor(normalBytes.length / 2)),
   // The cross-reference table's position points nowhere.
