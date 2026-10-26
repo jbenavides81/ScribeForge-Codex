@@ -22,6 +22,44 @@ export interface VaultDocument {
 /** A new version of a stored document: it keeps the document's title (stop 3c). */
 export type NewVersion = Omit<NewDocument, 'title'> & { note?: string };
 
+/** How many automatic backups a backup folder keeps (stop 4a). */
+export const BACKUP_KEEP = [5, 10, 20, 50] as const;
+export type BackupKeep = (typeof BACKUP_KEEP)[number];
+
+/** A folder that a sync program (or a USB drive) keeps, suggested for automatic backups. */
+export interface BackupPlace {
+  /** "OneDrive" or "Google Drive". */
+  name: string;
+  path: string;
+}
+
+/** Automatic backups, as the Archive screen shows them (stop 4a). */
+export interface BackupStatus {
+  /** The backup folder, or null when automatic backups are off. */
+  folder: string | null;
+  /** Which sync program's folder it's in, if known ("OneDrive", "Google Drive"). */
+  place: string | null;
+  keep: BackupKeep;
+  /** A backup is being copied into the folder now. */
+  running: boolean;
+  /** The last backup made from this PC: when, and if it failed, why. */
+  last: { at: string; ok: boolean; message: string } | null;
+  /** A newer backup of this vault, made on another PC; `changedHere` when this vault also changed since its last backup. */
+  newer: { created: string; changedHere: boolean } | null;
+}
+
+/** What checking a backup found (and, once restored, what it held). */
+export interface BackupCheck {
+  created: string;
+  documents: number;
+  /** Every part was checked (a backup file); a backup folder's stored files are checked as they're restored. */
+  checkedAll: boolean;
+  /** Newer backups in the folder still arriving from another PC. */
+  waiting?: number;
+  /** For a backup folder: the folder, so automatic backups can carry on there. */
+  folder?: string;
+}
+
 /** One version of a stored document (stop 3c). */
 export interface VaultVersion {
   id: string;

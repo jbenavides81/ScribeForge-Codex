@@ -1,7 +1,8 @@
-// The Archive's plain words: its history, whether the history checks out, and why it locked.
+// The Archive's plain words: its history, whether the history checks out, why it locked, and its backups.
 import { describe, expect, it } from 'vitest';
-import type { HistoryAction, HistoryEntry } from '../../src/shared/vault';
-import { historyFile, historyState, historyText, lockedBecause } from '../../src/renderer/src/archive/describe';
+import type { BackupStatus, HistoryAction, HistoryEntry } from '../../src/shared/vault';
+import { backupStatusText, historyFile, historyState, historyText, lockedBecause, newerBackupText } from '../../src/renderer/src/archive/describe';
+import { formatDate } from '../../src/renderer/src/details/describe';
 
 const entry = (action: HistoryAction, details: Record<string, string> = {}, title: string | null = 'Lease'): HistoryEntry => ({
   seq: 1,
@@ -39,5 +40,23 @@ describe('the Archive history in words', () => {
     expect(lockedBecause('windows-locked')).toMatch(/Windows locked/);
     expect(lockedBecause('sleep')).toMatch(/went to sleep/);
     expect(lockedBecause('button')).toBeNull();
+  });
+});
+
+describe('automatic backups in words (stop 4a)', () => {
+  const at = '2026-10-26T15:30:00.000Z';
+  const status = (s: Partial<BackupStatus>): BackupStatus => ({ folder: 'D:\\Backups', place: null, keep: 10, running: false, last: null, newer: null, ...s });
+
+  it('says whether they are on, running, done or failed', () => {
+    expect(backupStatusText(status({ folder: null }))).toBe('Off.');
+    expect(backupStatusText(status({}))).toBe('No backup yet.');
+    expect(backupStatusText(status({ running: true, last: { at, ok: true, message: '' } }))).toBe('Backing up…');
+    expect(backupStatusText(status({ last: { at, ok: true, message: '' } }))).toBe(`Last backup: ${formatDate(at)}.`);
+    expect(backupStatusText(status({ last: { at, ok: false, message: "The backup folder isn't there." } }))).toBe("The last backup didn't work. The backup folder isn't there.");
+  });
+
+  it('offers a newer backup from another PC, warning when this vault changed too', () => {
+    expect(newerBackupText({ created: at, changedHere: false })).toBe(`There's a newer backup of this vault in the backup folder, made on another PC on ${formatDate(at)}.`);
+    expect(newerBackupText({ created: at, changedHere: true })).toMatch(/This vault has changes too, made here since its last backup: restoring the newer backup replaces them\.$/);
   });
 });

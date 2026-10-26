@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { MakeCertificateRequest, MenuCommand, SaveBesideRequest, SaveManyRequest, SaveRequest, ScribeForgeApi, SettingsChange } from '../shared/api';
-import type { NewDocument, NewVersion, SearchOptions } from '../shared/vault';
+import type { BackupKeep, NewDocument, NewVersion, SearchOptions } from '../shared/vault';
 
 // The only things the screens can ask the rest of the app to do.
 const api: ScribeForgeApi = {
@@ -56,7 +56,16 @@ const api: ScribeForgeApi = {
   vaultRecoveryCode: (password: string) => ipcRenderer.invoke('vault:recovery-code', password),
   vaultBackup: () => ipcRenderer.invoke('vault:backup'),
   vaultChooseBackup: () => ipcRenderer.invoke('vault:choose-backup'),
+  vaultChooseBackupFolder: () => ipcRenderer.invoke('vault:choose-backup-folder'),
+  vaultUseBackupFolder: () => ipcRenderer.invoke('vault:use-backup-folder'),
   vaultRestoreBackup: (secret: string, kind: 'password' | 'recovery', restore: boolean) => ipcRenderer.invoke('vault:restore-backup', secret, kind, restore),
+  vaultBackupStatus: () => ipcRenderer.invoke('vault:backup-status'),
+  vaultBackupPlaces: () => ipcRenderer.invoke('vault:backup-places'),
+  vaultChooseBackupPlace: () => ipcRenderer.invoke('vault:choose-backup-place'),
+  vaultBackupOn: (folder: string) => ipcRenderer.invoke('vault:backup-on', folder),
+  vaultBackupOff: () => ipcRenderer.invoke('vault:backup-off'),
+  vaultBackupKeep: (keep: BackupKeep) => ipcRenderer.invoke('vault:backup-keep', keep),
+  vaultBackupNow: () => ipcRenderer.invoke('vault:backup-now'),
   vaultForgetBackup: () => ipcRenderer.send('vault:forget-backup'),
   vaultSearch: (query: string, options: SearchOptions) => ipcRenderer.invoke('vault:search', query, options),
   vaultUnindexed: () => ipcRenderer.invoke('vault:unindexed'),

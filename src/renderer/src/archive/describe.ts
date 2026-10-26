@@ -1,6 +1,6 @@
-// Plain words for the Archive: its history, and why it locked. No screen code, so the unit tests can
-// check every sentence.
-import type { HistoryCheck, HistoryEntry } from '../../../shared/vault';
+// Plain words for the Archive: its history, why it locked, and its backups. No screen code, so the unit
+// tests can check every sentence.
+import type { BackupStatus, HistoryCheck, HistoryEntry } from '../../../shared/vault';
 import { formatDate } from '../details/describe';
 
 const named = (e: HistoryEntry) => `“${e.title ?? 'a document'}”`;
@@ -76,4 +76,19 @@ export function lockedBecause(why: string): string | null {
     default:
       return null;
   }
+}
+
+/** How automatic backups are doing, in one line (stop 4a). */
+export function backupStatusText(status: BackupStatus): string {
+  if (!status.folder) return 'Off.';
+  if (status.running) return 'Backing up…';
+  if (!status.last) return 'No backup yet.';
+  if (!status.last.ok) return `The last backup didn't work. ${status.last.message}`;
+  return `Last backup: ${formatDate(status.last.at)}.`;
+}
+
+/** The offer of a newer backup made on another PC. */
+export function newerBackupText(newer: NonNullable<BackupStatus['newer']>): string {
+  const base = `There's a newer backup of this vault in the backup folder, made on another PC on ${formatDate(newer.created)}.`;
+  return newer.changedHere ? `${base} This vault has changes too, made here since its last backup: restoring the newer backup replaces them.` : base;
 }

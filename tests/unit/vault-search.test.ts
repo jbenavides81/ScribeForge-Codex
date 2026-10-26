@@ -149,10 +149,11 @@ describe('the search index', () => {
 
   it('goes into backups, so a restored vault can be searched straight away', () => {
     const vault = sample();
-    const backup = vault.backup();
-    expect(Buffer.from(backup).includes(Buffer.from('glovebox'))).toBe(false);
+    const file = path.join(dir, 'search.sfbackup');
+    vault.backup(file);
+    expect(readFileSync(file).includes(Buffer.from('glovebox'))).toBe(false);
     const elsewhere = new Vault(path.join(dir, 'Other', 'Vault'), { cost: COST });
-    elsewhere.restoreBackup(backup, PASSWORD);
+    elsewhere.restoreBackup({ file }, PASSWORD);
     expect(elsewhere.unindexed()).toEqual([]);
     expect(found(elsewhere, 'glovebox')).toEqual(['Car policy:2']);
   });

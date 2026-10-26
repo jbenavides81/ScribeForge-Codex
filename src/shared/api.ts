@@ -1,6 +1,6 @@
 import type { CertificateSummary, TrustAnchor } from '../engine/sign/types';
 import type { RedactionDpi, Settings, TextSize } from './settings';
-import type { HistoryCheck, NewDocument, NewVersion, SearchOptions, SearchResult, TextlessDocument, VaultDocument, VaultLockMinutes, VaultReply, VaultStatus, VaultVersion } from './vault';
+import type { BackupCheck, BackupKeep, BackupPlace, BackupStatus, HistoryCheck, NewDocument, NewVersion, SearchOptions, SearchResult, TextlessDocument, VaultDocument, VaultLockMinutes, VaultReply, VaultStatus, VaultVersion } from './vault';
 import type { ThemeId } from './themes';
 
 /** A file the main process read for the screens. */
@@ -168,7 +168,8 @@ export interface ScribeForgeApi {
   vaultUpdate(id: string, change: { title?: string; labels?: string[]; note?: string }): Promise<VaultReply<VaultDocument>>;
   vaultVoid(id: string, reason: string): Promise<VaultReply<VaultDocument>>;
   vaultRestoreDocument(id: string): Promise<VaultReply<VaultDocument>>;
-  vaultErase(id: string, reason: string): Promise<VaultReply<void>>;
+  /** Erases a document for good; `backupFolder` when it was also removed from the backup folder. */
+  vaultErase(id: string, reason: string): Promise<VaultReply<{ backupFolder: boolean }>>;
   vaultSaveCopy(id: string): Promise<SaveResult>;
   vaultHistory(): Promise<VaultReply<HistoryCheck>>;
   /** Saves text (the history) where the person chooses. */
@@ -178,8 +179,23 @@ export interface ScribeForgeApi {
   vaultRecoveryCode(password: string): Promise<VaultReply<string>>;
   vaultBackup(): Promise<SaveResult>;
   vaultChooseBackup(): Promise<{ ok: true; name: string } | { ok: false; message?: string }>;
+  /** Chooses a backup folder to restore from: its newest complete backup (stop 4a). */
+  vaultChooseBackupFolder(): Promise<{ ok: true; name: string } | { ok: false; message?: string }>;
+  /** Restores from the folder automatic backups go to: its newest complete backup. */
+  vaultUseBackupFolder(): Promise<{ ok: true; name: string } | { ok: false; message?: string }>;
   /** Checks the chosen backup with its password or recovery code, and with `restore`, replaces the vault with it. */
-  vaultRestoreBackup(secret: string, kind: 'password' | 'recovery', restore: boolean): Promise<VaultReply<{ created: string; documents: number }>>;
+  vaultRestoreBackup(secret: string, kind: 'password' | 'recovery', restore: boolean): Promise<VaultReply<BackupCheck>>;
+  /** Automatic backups (stop 4a): where they go, the last one, and any newer one from another PC. */
+  vaultBackupStatus(): Promise<BackupStatus>;
+  /** OneDrive's and Google Drive's folders, if they're on this PC. */
+  vaultBackupPlaces(): Promise<BackupPlace[]>;
+  /** Choose another folder for backups (null: cancelled). */
+  vaultChooseBackupPlace(): Promise<string | null>;
+  /** Turns automatic backups on, into a backup folder in `folder`, and makes the first backup. */
+  vaultBackupOn(folder: string): Promise<VaultReply<BackupStatus>>;
+  vaultBackupOff(): Promise<BackupStatus>;
+  vaultBackupKeep(keep: BackupKeep): Promise<BackupStatus>;
+  vaultBackupNow(): Promise<VaultReply<BackupStatus>>;
   vaultForgetBackup(): void;
   /** Searches the vault's documents (stop 3b). */
   vaultSearch(query: string, options: SearchOptions): Promise<VaultReply<SearchResult[]>>;

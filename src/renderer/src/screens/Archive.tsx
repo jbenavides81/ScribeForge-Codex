@@ -1,9 +1,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { OpenedFile } from '../../../shared/api';
-import { MIN_VAULT_PASSWORD, type HistoryCheck, type NewDocument, type SearchResult, type TextlessDocument, type VaultDocument, type VaultStatus, type VaultVersion } from '../../../shared/vault';
+import {
+  BACKUP_KEEP,
+  MIN_VAULT_PASSWORD,
+  type BackupCheck,
+  type BackupKeep,
+  type BackupStatus,
+  type HistoryCheck,
+  type NewDocument,
+  type SearchResult,
+  type TextlessDocument,
+  type VaultDocument,
+  type VaultStatus,
+  type VaultVersion,
+} from '../../../shared/vault';
 import { CompareView } from '../archive/CompareView';
-import { historyFile, historyState, historyText, lockedBecause } from '../archive/describe';
-import { ChangePasswordDialog, NewRecoveryCodeDialog, ReasonDialog, RecoveryCodeDialog, RestoreBackupDialog } from '../archive/VaultDialogs';
+import { backupStatusText, historyFile, historyState, historyText, lockedBecause, newerBackupText } from '../archive/describe';
+import { BackupPlaceDialog, ChangePasswordDialog, NewRecoveryCodeDialog, ReasonDialog, RecoveryCodeDialog, RestoreBackupDialog } from '../archive/VaultDialogs';
 import { Icon } from '../components/Icon';
 import { formatDate, sizeText } from '../details/describe';
 import type { ConfirmRequest } from '../pages/sources';
@@ -317,6 +330,11 @@ export function Archive({
   const [textless, setTextless] = useState<TextlessDocument[]>([]);
   const [indexing, setIndexing] = useState<{ done: number; total: number } | null>(null);
   const [comparing, setComparing] = useState<{ doc: VaultDocument; first: VaultVersion; second: VaultVersion } | null>(null);
+  /** Automatic backups (stop 4a): where they go, the last one, and any newer one from another PC. */
+  const [backups, setBackups] = useState<BackupStatus | null>(null);
+  const [choosingPlace, setChoosingPlace] = useState(false);
+  /** "Not now" to the newer backup: not offered again until the vault next locks, or a newer one arrives. */
+  const [notNow, setNotNow] = useState<string | null>(null);
   /** Documents whose text couldn't be read this session (a password not given, or damaged): not asked for again. */
   const skipped = useRef(new Set<string>());
   const indexingNow = useRef(false);
@@ -332,6 +350,7 @@ export function Archive({
     const s = await api.vaultStatus();
     setStatus(s);
     onStatus(s);
+    setBackups(s.exists ? await api.vaultBackupStatus() : null);
     if (!s.unlocked) {
       setDocs(null);
       setHistory(null);
@@ -349,12 +368,20 @@ export function Archive({
     void refresh();
   }, [refresh]);
 
+  // While a backup is being copied into the backup folder (after locking, say), check back each second.
+  useEffect(() => {
+    if (!backups?.running) return;
+    const timer = window.setTimeout(() => void api.vaultBackupStatus().then(setBackups), 1000);
+    return () => window.clearTimeout(timer);
+  }, [backups]);
+
   useEffect(() => {
     if (!lockSignal) return;
     setNote(lockedBecause(lockSignal.why));
     setSelected(null);
     setSearched(null);
     setComparing(null);
+    setNotNow(null);
     skipped.current.clear();
     void refresh();
   }, [lockSignal, refresh]);
@@ -554,10 +581,35 @@ export function Archive({
     await refresh();
   };
 
-  const chooseBackup = async () => {
-    const chosen = await api.vaultChooseBackup();
+  const chooseBackup = async (from: 'file' | 'folder' | 'own' = 'file') => {
+    const chosen = from === 'file' ? await api.vaultChooseBackup() : from === 'folder' ? await api.vaultChooseBackupFolder() : await api.vaultUseBackupFolder();
     if (chosen.ok) setRestoring(chosen.name);
     else if (chosen.message) onMessage(chosen.message);
+  };
+
+  /** After restoring: from a backup folder, offer to carry on backing up there, if automatic backups are off. */
+  const restored = async (result: BackupCheck) => {
+    setRestoring(null);
+    onMessage(`The vault was restored from the backup: ${plural(result.documents, 'document')}.`);
+    await refresh();
+    if (!result.folder || (await api.vaultBackupStatus()).folder) return;
+    const keep = await confirm({
+      title: 'Keep backing up to this folder?',
+      message: 'ScribeForge can carry on making automatic backups to the backup folder you restored from, so changes made here reach your other PC too.',
+      confirmLabel: 'Keep backing up',
+      cancelLabel: 'Not now',
+    });
+    if (!keep) return;
+    const on = await api.vaultBackupOn(result.folder);
+    if (!on.ok) onMessage(on.message);
+    else setBackups(on.value);
+  };
+
+  const backUpNow = async () => {
+    setBackups((b) => (b ? { ...b, running: true } : b));
+    const result = await api.vaultBackupNow();
+    if (!result.ok) onMessage(result.message);
+    setBackups(await api.vaultBackupStatus());
   };
 
   const saveHistory = async () => {
@@ -583,11 +635,7 @@ export function Archive({
         api.vaultForgetBackup();
         setRestoring(null);
       }}
-      onRestored={(n) => {
-        setRestoring(null);
-        onMessage(`The vault was restored from the backup: ${plural(n, 'document')}.`);
-        void refresh();
-      }}
+      onRestored={(result) => void restored(result)}
     />
   );
 
@@ -627,6 +675,9 @@ export function Archive({
             </button>
             <button type="button" className="sf-button" onClick={() => void chooseBackup()}>
               Restore a backup…
+            </button>
+            <button type="button" className="sf-button" onClick={() => void chooseBackup('folder')}>
+              Restore from a backup folder…
             </button>
           </div>
         </form>
@@ -678,10 +729,15 @@ export function Archive({
         </form>
         <section className="sf-section">
           <h2>Restore a backup</h2>
-          <p className="sf-muted">Replaces the vault on this PC with a backup you made earlier.</p>
-          <button type="button" className="sf-button" onClick={() => void chooseBackup()}>
-            Restore a backup…
-          </button>
+          <p className="sf-muted">Replaces the vault on this PC with a backup you made earlier, from a backup file or a backup folder.</p>
+          <div className="sf-vault-buttons">
+            <button type="button" className="sf-button" onClick={() => void chooseBackup()}>
+              Restore a backup…
+            </button>
+            <button type="button" className="sf-button" onClick={() => void chooseBackup('folder')}>
+              Restore from a backup folder…
+            </button>
+          </div>
         </section>
         {restoreDialog}
       </div>
@@ -749,6 +805,19 @@ export function Archive({
         </p>
       )}
       {status.indexDamaged && !indexing && <p className="sf-banner sf-notice">The search index couldn't be read, so it was made again.</p>}
+      {backups?.newer && notNow !== backups.newer.created && (
+        <div className="sf-banner sf-notice" data-testid="newer-backup">
+          <p>{newerBackupText(backups.newer)}</p>
+          <div className="sf-vault-buttons">
+            <button type="button" className="sf-button" onClick={() => void chooseBackup('own')}>
+              Restore it…
+            </button>
+            <button type="button" className="sf-button" onClick={() => setNotNow(backups.newer?.created ?? null)}>
+              Not now
+            </button>
+          </div>
+        </div>
+      )}
 
       {view === 'documents' ? (
         <>
@@ -934,12 +1003,61 @@ export function Archive({
 
       <section className="sf-section" aria-labelledby="vault-keeping">
         <h2 id="vault-keeping">Keeping the vault safe</h2>
+        <section className="sf-vault-backups" aria-labelledby="vault-automatic" data-testid="automatic-backups">
+          <h3 id="vault-automatic" className="sf-vault-subhead">Automatic backups</h3>
+          {backups?.folder ? (
+            <>
+              <p data-testid="backup-status" className={backups.last && !backups.last.ok && !backups.running ? 'sf-error' : undefined}>
+                {backupStatusText(backups)}
+              </p>
+              <p className="sf-muted sf-backup-folder">
+                {backups.place ? `In ${backups.place}: ` : 'In '}
+                {backups.folder}
+              </p>
+              <div className="sf-vault-buttons">
+                <button type="button" className="sf-button" disabled={backups.running} onClick={() => void backUpNow()}>
+                  Back up now
+                </button>
+                <button type="button" className="sf-button" onClick={() => setChoosingPlace(true)}>
+                  Change the folder…
+                </button>
+                <button type="button" className="sf-button" onClick={() => void api.vaultBackupOff().then(setBackups)}>
+                  Turn off
+                </button>
+                <label className="sf-field sf-inline-field">
+                  <span>Backups to keep</span>
+                  <select value={backups.keep} onChange={(e) => void api.vaultBackupKeep(Number(e.target.value) as BackupKeep).then(setBackups)}>
+                    {BACKUP_KEEP.map((n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <p className="sf-muted">A backup is made whenever the vault locks or ScribeForge closes, if anything changed. Everything in the folder is encrypted.</p>
+            </>
+          ) : (
+            <>
+              <p data-testid="backup-status">Off. ScribeForge can keep encrypted backups in a folder that OneDrive or Google Drive syncs, so they're online too, or on a USB drive.</p>
+              <div className="sf-vault-buttons">
+                <button type="button" className="sf-button" onClick={() => setChoosingPlace(true)}>
+                  Turn on automatic backups…
+                </button>
+              </div>
+            </>
+          )}
+        </section>
+        <h3 className="sf-vault-subhead">Backup files, and the vault's keys</h3>
         <div className="sf-vault-buttons">
           <button type="button" className="sf-button" onClick={() => void backup()} disabled={busy !== null}>
             Make a backup…
           </button>
           <button type="button" className="sf-button" onClick={() => void chooseBackup()}>
             Restore a backup…
+          </button>
+          <button type="button" className="sf-button" onClick={() => void chooseBackup('folder')}>
+            Restore from a backup folder…
           </button>
           <button type="button" className="sf-button" onClick={() => setDialog('password')}>
             Change the password…
@@ -955,6 +1073,16 @@ export function Archive({
       </section>
 
       {code && <RecoveryCodeDialog code={code} onDone={() => setCode(null)} />}
+      {choosingPlace && (
+        <BackupPlaceDialog
+          onCancel={() => setChoosingPlace(false)}
+          onDone={(next) => {
+            setChoosingPlace(false);
+            setBackups(next);
+            onMessage('Automatic backups are on. The first backup is in the backup folder.');
+          }}
+        />
+      )}
       {dialog === 'password' && (
         <ChangePasswordDialog
           onCancel={() => setDialog(null)}
@@ -996,7 +1124,7 @@ export function Archive({
         <ReasonDialog
           title={`Erase “${current.title}” for good?`}
           explanation="Erasing removes the document and everything about it from the vault. It can't be undone. Only its title and your reason stay, in the history."
-          warning="Copies in backups you've already made aren't touched: restoring one of those brings it back. To keep it but hide it, use Void instead."
+          warning="It's removed from automatic backups too. Backup files you've saved yourself aren't touched: restoring one of those brings it back. To keep it but hide it, use Void instead."
           confirmLabel="Erase it for good"
           testId="erase-dialog"
           onCancel={() => setDialog(null)}
@@ -1008,7 +1136,7 @@ export function Archive({
               const r = await api.vaultErase(current.id, reason);
               if (!r.ok) return failed(r.message, r.locked);
               setSelected(null);
-              onMessage(`“${current.title}” was erased from the vault.`);
+              onMessage(`“${current.title}” was erased from the vault${r.value.backupFolder ? ' and from the backup folder' : ''}.`);
               void refresh();
             })();
           }}

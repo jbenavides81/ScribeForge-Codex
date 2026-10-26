@@ -26,6 +26,8 @@ export async function launch(project: string, userData?: string, extraEnv: Recor
   for (const [k, v] of Object.entries(process.env)) if (v !== undefined) env[k] = v;
   delete env.ELECTRON_RENDERER_URL;
   delete env.SCRIBEFORGE_TRIAL;
+  // Tests never see this PC's own OneDrive (a test can give it a folder of its own).
+  for (const v of ['OneDrive', 'OneDriveConsumer', 'OneDriveCommercial']) env[v] = '';
   Object.assign(env, extraEnv);
   // Always last: a test run never uses the real or trial data folders.
   env.SCRIBEFORGE_USER_DATA = data;

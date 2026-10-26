@@ -176,7 +176,7 @@ test('void hides and keeps, restore brings back, erase removes for good; the his
 
   await panel.getByRole('button', { name: 'Erase for good…' }).click();
   const erase = win.getByTestId('erase-dialog');
-  await expect(erase).toContainText("Copies in backups you've already made aren't touched");
+  await expect(erase).toContainText("Backup files you've saved yourself aren't touched");
   await erase.getByLabel('Reason').fill('Stored by mistake');
   await erase.getByRole('button', { name: 'Erase it for good' }).click();
   await win.getByTestId('confirm-dialog').getByRole('button', { name: 'Erase it' }).click();

@@ -37,6 +37,14 @@ beforeEach(() => {
   dir = mkdtempSync(path.join(tmpdir(), 'scribeforge-vault-test-'));
 });
 
+/** Makes a backup file of the vault, and returns where it is. */
+let backups = 0;
+function backupOf(vault: Vault): { file: string } {
+  const file = path.join(dir, `backup ${++backups}.sfbackup`);
+  vault.backup(file);
+  return { file };
+}
+
 describe('making and opening a vault', () => {
   it('keeps nothing readable on disk: no text, title, file name, label or note', () => {
     const vault = make();
@@ -101,7 +109,7 @@ describe('making and opening a vault', () => {
     vault.create(PASSWORD, false);
     const doc = addSample(vault);
     vault.lock();
-    for (const attempt of [() => vault.documents(), () => vault.read(doc.id), () => vault.update(doc.id, { title: 'x' }), () => vault.history(), () => vault.backup()]) {
+    for (const attempt of [() => vault.documents(), () => vault.read(doc.id), () => vault.update(doc.id, { title: 'x' }), () => vault.history(), () => vault.backup(path.join(dir, 'locked.sfbackup'))]) {
       expect(attempt).toThrow(/locked/);
     }
   });
@@ -235,8 +243,8 @@ describe('backups', () => {
     const vault = make();
     vault.create(PASSWORD, false);
     const doc = addSample(vault);
-    const backup = vault.backup();
-    for (const secret of [...SECRETS, PASSWORD]) expect(Buffer.from(backup).includes(Buffer.from(secret)), secret).toBe(false);
+    const backup = backupOf(vault);
+    for (const secret of [...SECRETS, PASSWORD]) expect(readFileSync(backup.file).includes(Buffer.from(secret)), secret).toBe(false);
     // Later changes are undone by restoring.
     vault.eraseDocument(doc.id, 'Gone');
     expect(() => vault.restoreBackup(backup, 'wrong password!!')).toThrow(/doesn't open this backup/);
@@ -255,11 +263,13 @@ describe('backups', () => {
     const vault = make();
     vault.create(PASSWORD, false);
     addSample(vault);
-    const backup = vault.backup();
+    const backup = readFileSync(backupOf(vault).file);
     for (const at of [20, Math.floor(backup.length / 2), backup.length - 5]) {
-      const bad = backup.slice();
+      const bad = Buffer.from(backup);
       bad[at] ^= 1;
-      expect(() => vault.restoreBackup(bad, PASSWORD)).toThrow(/damaged|isn't a ScribeForge|doesn't open/);
+      const file = path.join(dir, `bad ${at}.sfbackup`);
+      writeFileSync(file, bad);
+      expect(() => vault.restoreBackup({ file }, PASSWORD)).toThrow(/damaged|isn't a ScribeForge|doesn't open/);
     }
     expect(vault.unlocked).toBe(true);
     expect(vault.documents()).toHaveLength(1);
@@ -270,7 +280,7 @@ describe('backups', () => {
     const vault = make();
     vault.create(PASSWORD, false);
     addSample(vault);
-    const backup = vault.backup();
+    const backup = backupOf(vault);
     const elsewhere = new Vault(path.join(dir, 'Other PC', 'Vault'), { cost: COST });
     expect(elsewhere.exists()).toBe(false);
     expect(elsewhere.restoreBackup(backup, PASSWORD).documents).toBe(1);

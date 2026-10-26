@@ -21,6 +21,11 @@ describe('validateSettings', () => {
       certificateFile: 'C:\\me.pfx',
       trustedCertificates: ['MIIBAA=='],
       vaultLockMinutes: 30,
+      archiveBackupFolder: '',
+      archiveBackupKeep: 5,
+      installId: 'abcdef012345',
+      archiveBackupState: {},
+      archiveBackupErased: {},
     };
     const { settings, problems } = validateSettings(input);
     expect(problems).toEqual([]);
@@ -42,6 +47,25 @@ describe('validateSettings', () => {
     const sneaky = { theme: 'dark', trustedCertificates: ['MIIBBB=='], certificateFile: 'C:\\other.pfx' } as Parameters<typeof applyChange>[1];
     const next = applyChange(current, sneaky);
     expect(next).toMatchObject({ theme: 'dark', trustedCertificates: ['MIIBAA=='], certificateFile: 'C:\\me.pfx' });
+  });
+
+  it('keeps the backup folder, how many backups to keep, this PC\'s tag and what each vault held when last backed up (stop 4a)', () => {
+    const state = { abcdef012345: { at: '2026-10-26T10:00:00.000Z', state: '12:abcdefgh' } };
+    const good = validateSettings({ archiveBackupFolder: 'D:\\Backups\\ScribeForge Archive backup', archiveBackupKeep: 20, installId: '0123456789ab', archiveBackupState: state });
+    expect(good.problems).toEqual([]);
+    expect(good.settings).toMatchObject({ archiveBackupFolder: 'D:\\Backups\\ScribeForge Archive backup', archiveBackupKeep: 20, installId: '0123456789ab', archiveBackupState: state });
+    const bad = validateSettings({ archiveBackupKeep: 7, installId: 'Jo’s laptop', archiveBackupState: [] });
+    expect(bad.problems.sort()).toEqual(['archiveBackupKeep', 'archiveBackupState', 'installId']);
+    expect(bad.settings).toMatchObject({ archiveBackupKeep: 10, installId: '', archiveBackupState: {} });
+    // Only well-formed entries are kept, and no more than ten vaults.
+    const many = Object.fromEntries(Array.from({ length: 15 }, (_, i) => [i.toString(16).padStart(12, '0'), { at: 'x', state: 's' }]));
+    expect(Object.keys(validateSettings({ archiveBackupState: { ...many, 'not a tag': { at: 'x', state: 's' } } }).settings.archiveBackupState)).toHaveLength(10);
+    // The Settings screen can't change them.
+    const next = applyChange(good.settings, { archiveBackupFolder: 'C:\\elsewhere' } as Parameters<typeof applyChange>[1]);
+    expect(next.archiveBackupFolder).toBe('D:\\Backups\\ScribeForge Archive backup');
+    // Erased files still to leave the backup folder: random names only.
+    const file = '0b5c8f2e-1a2b-4c3d-9e8f-0a1b2c3d4e5f.sealed';
+    expect(validateSettings({ archiveBackupErased: { abcdef012345: [file, 'C:\\secret.pdf'], 'not a tag': [file] } }).settings.archiveBackupErased).toEqual({ abcdef012345: [file] });
   });
 
   it('falls back to defaults for invalid values and lists each one', () => {

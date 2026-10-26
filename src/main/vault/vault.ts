@@ -10,10 +10,12 @@
 // after every change. Locking clears the key and the database from memory. This never reads PDFs:
 // page counts, titles and pictures of first pages come from the sandboxed window.
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { writeSafely } from '../fileWrite';
+import { missingFiles, snapshotName, snapshotPath, SNAPSHOT_MAGIC, storedPath } from './backupFolder';
+import { buildContainer, ContainerError, ContainerReader, writeContainer } from './container';
 import {
   DEFAULT_COST,
   derive,
@@ -23,6 +25,7 @@ import {
   normaliseRecoveryCode,
   sameBytes,
   seal,
+  sealedFileSound,
   subkey,
   unseal,
   VaultCryptoError,
@@ -822,9 +825,10 @@ export class Vault {
 
   /**
    * Erases a document for good (Phase 3 plan, question 6): its files and everything about it go,
-   * except its title and the reason, in the history. Copies already in backups stay there.
+   * except its title and the reason, in the history. Copies already in backup files stay there;
+   * returns the stored files removed, so a backup folder can lose them too (stop 4a).
    */
-  eraseDocument(id: string, reason: string): void {
+  eraseDocument(id: string, reason: string): string[] {
     const { db } = this.requireUnlocked();
     const why = clean(reason, LIMITS.reason);
     if (!why) throw new VaultError('invalid', 'Say why the document is being erased.');
@@ -847,6 +851,7 @@ export class Vault {
     index.prepare('DELETE FROM indexed WHERE document = ?').run(id);
     this.saveIndex();
     for (const file of files) rmSync(this.filePath(file), { force: true });
+    return files.map((f) => `${f}.sealed`);
   }
 
   /** Records that a copy was saved out of the vault (the app saves it where the person chose). */
@@ -876,93 +881,198 @@ export class Vault {
     return code;
   }
 
+  /** A short tag for this vault, the same on every PC, for naming its backups in a backup folder. Readable while locked. */
+  tag(): string {
+    return createHash('sha256').update(this.readInfo().id).digest('hex').slice(0, 12);
+  }
+
+  /** Where the vault's contents are now: it changes with every change recorded in the history (stop 4a). */
+  state(): string {
+    const { db } = this.requireUnlocked();
+    const last = db.prepare('SELECT seq, seal FROM history ORDER BY seq DESC LIMIT 1').get() as { seq: number; seal: string } | undefined;
+    return last ? `${last.seq}:${last.seal.slice(0, 16)}` : '';
+  }
+
+  /** The stored files the vault uses now, with their sizes. */
+  private storedFiles(): { name: string; size: number; from: string }[] {
+    const { db } = this.requireUnlocked();
+    return (db.prepare('SELECT DISTINCT file FROM versions ORDER BY file').all() as { file: string }[]).map((r) => {
+      const from = this.filePath(r.file);
+      return { name: `${r.file}.sealed`, size: statSync(from).size, from };
+    });
+  }
+
   /**
    * One file holding the whole vault, still encrypted: the key file, the database and every stored
-   * file, with a seal over all of it so any change is found when it's restored.
+   * file, with a seal over all of it so any change is found when it's restored. It's written a piece
+   * at a time, so a large vault doesn't need memory several times its size (stop 4a).
    */
-  backup(): Uint8Array {
+  backup(target: string): void {
     const { key, info } = this.requireUnlocked();
     this.record('backup-made', null, null, {});
     this.save();
     if (this.index) this.saveIndex();
-    const names = ['vault.json', 'archive.sealed', ...(existsSync(this.searchFile) ? ['search.sealed'] : []), ...readdirSync(path.join(this.dir, 'files')).filter((n) => FILE_NAME.test(n)).map((n) => `files/${n}`)];
-    const parts = names.map((name) => ({ name, bytes: readFileSync(path.join(this.dir, name)) }));
-    const manifest = Buffer.from(JSON.stringify({ created: this.now().toISOString(), vault: info.id, files: parts.map((p) => ({ name: p.name, size: p.bytes.length })) }));
-    const length = Buffer.alloc(4);
-    length.writeUInt32BE(manifest.length);
-    const body = Buffer.concat([BACKUP_MAGIC, length, manifest, ...parts.map((p) => p.bytes)]);
-    return new Uint8Array(Buffer.concat([body, hmac(subkey(key, info.id, 'backup'), body)]));
+    const names = ['vault.json', 'archive.sealed', ...(existsSync(this.searchFile) ? ['search.sealed'] : []), ...this.storedFiles().map((f) => `files/${f.name}`)];
+    writeContainer(
+      target,
+      BACKUP_MAGIC,
+      { created: this.now().toISOString(), vault: info.id },
+      names.map((name) => ({ name, file: path.join(this.dir, ...name.split('/')) })),
+      subkey(key, info.id, 'backup'),
+      (file) => statSync(file).size,
+    );
   }
 
   /**
-   * Checks a backup with its password (or recovery code), and replaces this vault with it. Every
-   * part is checked before anything is written. Returns when the backup was made, and how many
-   * documents it holds; the vault is then unlocked.
+   * A backup for a backup folder (stop 4a): the key file, database and search index, sealed, with
+   * the list of stored files it needs. The stored files themselves are copied into the folder by
+   * the caller, once each; they're already encrypted.
    */
-  restoreBackup(backup: Uint8Array, secret: string, kind: 'password' | 'recovery' = 'password', check = false): { created: string; documents: number } {
-    const bytes = Buffer.from(backup.buffer, backup.byteOffset, backup.byteLength);
+  snapshot(madeBy: string): { name: string; bytes: Buffer; stored: { name: string; size: number; from: string }[]; state: string; created: Date } {
+    const { key, info } = this.requireUnlocked();
+    if (this.index) this.saveIndex();
+    const created = this.now();
+    const stored = this.storedFiles();
+    const parts = ['vault.json', 'archive.sealed', ...(existsSync(this.searchFile) ? ['search.sealed'] : [])].map((name) => ({ name, bytes: readFileSync(path.join(this.dir, name)) }));
+    const bytes = buildContainer(
+      SNAPSHOT_MAGIC,
+      { created: created.toISOString(), vault: info.id, madeBy, stored: stored.map((f) => ({ name: f.name, size: f.size })) },
+      parts,
+      subkey(key, info.id, 'backup'),
+    );
+    return { name: snapshotName(created, this.tag(), madeBy), bytes, stored, state: this.state(), created };
+  }
+
+  /**
+   * Checks a backup with its password (or recovery code), and with `check` false, replaces this
+   * vault with it. The backup is a backup file, or one backup in a backup folder. Nothing is
+   * replaced until every part has been checked. Returns when the backup was made and how many
+   * documents it holds; after restoring, the vault is unlocked.
+   */
+  restoreBackup(
+    source: { file: string } | { folder: string; snapshot: string },
+    secret: string,
+    kind: 'password' | 'recovery' = 'password',
+    check = false,
+  ): { created: string; documents: number; checkedAll: boolean } {
     const damaged = () => new VaultError('damaged', "This backup is damaged or has been altered, so it wasn't used.");
-    if (!bytes.subarray(0, BACKUP_MAGIC.length).equals(BACKUP_MAGIC) || bytes.length < BACKUP_MAGIC.length + 4 + 32) throw new VaultError('invalid', "This isn't a ScribeForge vault backup.");
-    const manifestLength = bytes.readUInt32BE(BACKUP_MAGIC.length);
-    const manifestStart = BACKUP_MAGIC.length + 4;
-    let manifest: { created: string; vault: string; files: { name: string; size: number }[] };
+    const small = ['vault.json', 'archive.sealed', 'search.sealed'];
+    let reader: ContainerReader;
     try {
-      manifest = JSON.parse(bytes.subarray(manifestStart, manifestStart + manifestLength).toString('utf8'));
-    } catch {
-      throw damaged();
+      reader =
+        'file' in source
+          ? new ContainerReader(source.file, BACKUP_MAGIC, (n) => small.includes(n) || (n.startsWith('files/') && FILE_NAME.test(n.slice(6))))
+          : new ContainerReader(snapshotPath(source.folder, source.snapshot), SNAPSHOT_MAGIC, (n) => small.includes(n));
+    } catch (error) {
+      if (error instanceof ContainerError && error.kind === 'not-backup') throw new VaultError('invalid', "This isn't a ScribeForge vault backup.");
+      if (error instanceof ContainerError) throw damaged();
+      throw new VaultError('invalid', "That backup couldn't be read.");
     }
-    const parts = new Map<string, Buffer>();
-    let at = manifestStart + manifestLength;
-    for (const f of manifest.files ?? []) {
-      const ok = ['vault.json', 'archive.sealed', 'search.sealed'].includes(f.name) || (f.name.startsWith('files/') && FILE_NAME.test(f.name.slice(6)));
-      if (!ok || !Number.isSafeInteger(f.size) || f.size < 0 || at + f.size > bytes.length - 32) throw damaged();
-      parts.set(f.name, bytes.subarray(at, at + f.size));
-      at += f.size;
-    }
-    if (at !== bytes.length - 32 || !parts.has('vault.json') || !parts.has('archive.sealed')) throw damaged();
+    try {
+      const list = reader.list as { created?: unknown; vault?: unknown; stored?: unknown };
+      if (typeof list.created !== 'string' || typeof list.vault !== 'string' || !reader.has('vault.json') || !reader.has('archive.sealed')) throw damaged();
+      const created = list.created;
 
-    // Unlock the backup's own key copy, then check the seal over everything, then every part.
-    let info: VaultFile;
-    try {
-      info = JSON.parse((parts.get('vault.json') as Buffer).toString('utf8'));
-    } catch {
-      throw damaged();
-    }
-    if (info?.format !== 'ScribeForge vault' || info.id !== manifest.vault) throw damaged();
-    const copy = kind === 'password' ? info.password : info.recovery;
-    const key = copy ? this.openCopy(copy, kind === 'recovery' ? normaliseRecoveryCode(secret) : secret, kind, info.id) : null;
-    if (!key) throw new VaultError('invalid', kind === 'password' ? "That password doesn't open this backup." : "That recovery code doesn't open this backup.");
-    if (!sameBytes(hmac(subkey(key, info.id, 'backup'), bytes.subarray(0, bytes.length - 32)), bytes.subarray(bytes.length - 32))) throw damaged();
-    let documents: number;
-    try {
-      const db = new DatabaseSync(':memory:');
-      db.deserialize(unseal(subkey(key, info.id, 'archive'), 'archive', parts.get('archive.sealed') as Buffer));
-      documents = (db.prepare('SELECT count(*) AS n FROM documents').get() as { n: number }).n;
-      const needed = (db.prepare('SELECT file FROM versions').all() as { file: string }[]).map((r) => `files/${r.file}.sealed`);
-      db.close();
-      if (needed.some((n) => !parts.has(n))) throw damaged();
-      for (const [name, part] of parts) if (name.startsWith('files/')) unseal(subkey(key, info.id, 'files'), `file:${name.slice(6, -7)}`, part);
-      if (parts.has('search.sealed')) unseal(subkey(key, info.id, 'search'), 'search', parts.get('search.sealed') as Buffer);
-    } catch {
-      throw damaged();
-    }
-    if (check) return { created: manifest.created, documents };
+      // Unlock the backup's own key copy, then check the seal over everything.
+      let info: VaultFile;
+      try {
+        info = JSON.parse(reader.read('vault.json').toString('utf8'));
+      } catch {
+        throw damaged();
+      }
+      if (info?.format !== 'ScribeForge vault' || info.id !== list.vault) throw damaged();
+      const copy = kind === 'password' ? info.password : info.recovery;
+      const key = copy ? this.openCopy(copy, kind === 'recovery' ? normaliseRecoveryCode(secret) : secret, kind, info.id) : null;
+      if (!key) throw new VaultError('invalid', kind === 'password' ? "That password doesn't open this backup." : "That recovery code doesn't open this backup.");
+      if (!reader.sealed(subkey(key, info.id, 'backup'))) throw damaged();
 
-    // Written beside the vault first, then swapped in.
-    this.lock();
-    this.info = null;
-    const incoming = `${this.dir}.restoring`;
-    const old = `${this.dir}.replaced`;
-    rmSync(incoming, { recursive: true, force: true });
-    mkdirSync(path.join(incoming, 'files'), { recursive: true });
-    for (const [name, part] of parts) writeSafely(path.join(incoming, ...name.split('/')), part);
-    rmSync(old, { recursive: true, force: true });
-    if (existsSync(this.dir)) renameSync(this.dir, old);
-    renameSync(incoming, this.dir);
-    rmSync(old, { recursive: true, force: true });
-    if (!this.unlock(secret, kind)) throw damaged();
-    this.record('backup-restored', null, null, { made: manifest.created });
-    this.save();
-    return { created: manifest.created, documents };
+      // What it holds, and whether every stored file it needs is there.
+      const stored = new Map<string, number>();
+      if ('file' in source) {
+        for (const name of reader.names()) if (name.startsWith('files/')) stored.set(name.slice(6), (reader.list.files.find((f) => f.name === name) as { size: number }).size);
+      } else {
+        if (!Array.isArray(list.stored)) throw damaged();
+        for (const f of list.stored as { name?: unknown; size?: unknown }[]) {
+          if (typeof f?.name !== 'string' || !FILE_NAME.test(f.name) || !Number.isSafeInteger(f.size)) throw damaged();
+          stored.set(f.name, f.size as number);
+        }
+      }
+      let documents: number;
+      let needed: string[];
+      try {
+        const db = new DatabaseSync(':memory:');
+        db.deserialize(unseal(subkey(key, info.id, 'archive'), 'archive', reader.read('archive.sealed')));
+        documents = (db.prepare('SELECT count(*) AS n FROM documents').get() as { n: number }).n;
+        needed = (db.prepare('SELECT DISTINCT file FROM versions').all() as { file: string }[]).map((r) => `${r.file}.sealed`);
+        db.close();
+        if (reader.has('search.sealed')) unseal(subkey(key, info.id, 'search'), 'search', reader.read('search.sealed'));
+      } catch {
+        throw damaged();
+      }
+      if (needed.some((n) => !stored.has(n))) throw damaged();
+      if ('folder' in source) {
+        const missing = missingFiles(
+          source.folder,
+          needed.map((n) => ({ name: n, size: stored.get(n) as number })),
+        );
+        if (missing > 0) {
+          throw new VaultError('invalid', `This backup isn't complete yet: ${missing === 1 ? "1 of its files isn't" : `${missing} of its files aren't`} in the folder. If it was made on another PC, it may still be arriving: try again in a few minutes.`);
+        }
+      }
+      if (check) return { created, documents, checkedAll: 'file' in source };
+
+      // Written beside the vault first, every stored file checked, then swapped in.
+      const incoming = `${this.dir}.restoring`;
+      const old = `${this.dir}.replaced`;
+      rmSync(incoming, { recursive: true, force: true });
+      mkdirSync(path.join(incoming, 'files'), { recursive: true });
+      try {
+        // A backup file: everything copied out in one pass, checked by its seal on the way.
+        if ('file' in source) {
+          const wanted = new Set(needed.map((n) => `files/${n}`));
+          const ok = reader.extract(subkey(key, info.id, 'backup'), (name) =>
+            small.includes(name) ? path.join(incoming, name) : wanted.has(name) ? path.join(incoming, ...name.split('/')) : null,
+          );
+          if (!ok) throw damaged();
+        }
+        // A backup folder: its own small parts (sealed already checked), then each stored file,
+        // checked against its own seal, a piece at a time.
+        else for (const name of small) if (reader.has(name)) writeFileSync(path.join(incoming, name), reader.read(name));
+        const fileKey = subkey(key, info.id, 'files');
+        const sound = (file: string, name: string) => sealedFileSound(fileKey, `file:${name.slice(0, -7)}`, file);
+        for (const name of 'folder' in source ? needed : []) {
+          const target = path.join(incoming, 'files', name);
+          // A file this PC's vault already has is the same file (stored files never change): it's
+          // used instead of downloading it again, if it checks out.
+          const local = path.join(this.dir, 'files', name);
+          if (existsSync(local) && statSync(local).size === stored.get(name)) {
+            copyFileSync(local, target);
+            if (sound(target, name)) continue;
+          }
+          copyFileSync(storedPath((source as { folder: string }).folder, name), target);
+          if (!sound(target, name)) throw damaged();
+        }
+      } catch (error) {
+        rmSync(incoming, { recursive: true, force: true });
+        throw error instanceof VaultError ? error : damaged();
+      }
+      reader.close();
+      this.lock();
+      this.info = null;
+      rmSync(old, { recursive: true, force: true });
+      if (existsSync(this.dir)) renameSync(this.dir, old);
+      renameSync(incoming, this.dir);
+      rmSync(old, { recursive: true, force: true });
+      if (!this.unlock(secret, kind)) throw damaged();
+      this.record('backup-restored', null, null, { made: created });
+      this.save();
+      return { created, documents, checkedAll: true };
+    } finally {
+      try {
+        reader.close();
+      } catch {
+        // Closed already.
+      }
+    }
   }
 }

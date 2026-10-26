@@ -763,6 +763,13 @@ input[type='checkbox']:checked::before {
 .sf-search-results ul li { margin: 0.2rem 0; }
 .sf-match { background: var(--sf-selection); color: var(--sf-selection-text); border-radius: 2px; }
 
+/* Archive backups (stop 4a): automatic backups to a backup folder, and the offer of a newer one. */
+.sf-vault-subhead { margin: 1rem 0 0.35rem; font-size: 1.05rem; }
+.sf-vault-backups { padding-bottom: 0.5rem; border-bottom: 1px solid var(--sf-line); }
+.sf-backup-folder { overflow-wrap: anywhere; }
+.sf-inline-field { display: flex; flex-direction: row; align-items: center; gap: 0.5rem; margin: 0; }
+.sf-split-choices .sf-link-button { align-self: flex-start; margin-top: 0.25rem; }
+
 /* Archive versions (stop 3c): the list in the selected document's panel, and comparing two. */
 .sf-vault-versions { margin-top: 1.25rem; padding-top: 0.75rem; border-top: 1px solid var(--sf-line); }
 .sf-vault-versions h2 { margin: 0 0 0.5rem; font-size: 1.05rem; }

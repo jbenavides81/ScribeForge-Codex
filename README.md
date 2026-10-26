@@ -4,7 +4,7 @@ An open-source, offline PDF toolkit for Windows: view, organise, annotate, inspe
 
 ScribeForge never sends anything over the network, and it never changes the files you open: edits save to new files.
 
-**Status:** Phase 3 (the Archive) is complete. Version 1.8.0. You can:
+**Status:** Phase 4 (backups, contributing and releases) is under way. Version 1.9.0. You can:
 - open, view, search and copy from PDFs;
 - on the Pages screen, merge, split, reorder, rotate, delete, extract and insert blank pages;
 - on the Document screen, highlight, underline and strike out text; add notes, text boxes, drawings, shapes (rectangles, ellipses, lines and arrows) and stamps; move and resize them; see every annotation in the comments panel; reply to comments; change or delete annotations already in the file; and burn annotations into the page;
@@ -12,7 +12,7 @@ ScribeForge never sends anything over the network, and it never changes the file
 - on the Clean up screen, make a copy without any of those: details, attachments, form fields and comments (burned into the page or removed), what's on hidden layers, bookmarks and hidden page data;
 - on the Sign screen, sign a PDF with a certificate file (`.pfx` or `.p12`), with a box drawn on the page, in an empty signature box the file has, or invisibly; make your own certificate; and check the signatures a file has, without the internet: whether it changed since it was signed, and whether each signer's certificate leads back to one Windows trusts or you chose to trust;
 - on the Document screen in Redact mode, mark areas, selected text, every match of a search, or every email address, phone number, Social Security number, card number or listed word (Find patterns), check the marks, and save a redacted copy, keeping its details, bookmarks or comments if you choose, with a redaction log if you want one;
-- on the Archive screen, keep encrypted copies of your PDFs in a vault on this PC, with titles, labels and notes; search their text (words, "exact phrases" and word starts) and open a result at its page; keep each document's versions, with a note on each, and compare two versions page by page, side by side, with what changed boxed and the words added and removed listed; open them, save copies out, void, restore or erase them; see a history of every change; and make and restore encrypted backups. The vault needs your password (or a recovery code), and locks itself when ScribeForge starts, after a while unused, and when Windows locks or the PC sleeps;
+- on the Archive screen, keep encrypted copies of your PDFs in a vault on this PC, with titles, labels and notes; search their text (words, "exact phrases" and word starts) and open a result at its page; keep each document's versions, with a note on each, and compare two versions page by page, side by side, with what changed boxed and the words added and removed listed; open them, save copies out, void, restore or erase them; see a history of every change; and make and restore encrypted backups, including automatic backups to a folder OneDrive or Google Drive syncs, which another PC can restore from. The vault needs your password (or a recovery code), and locks itself when ScribeForge starts, after a while unused, and when Windows locks or the PC sleeps;
 - from Command Prompt or PowerShell, merge, split, rotate, extract, show details, redact and check signatures without opening the window (see [Command line](#command-line)).
 
 Everything saves to a new file. Before saving, ScribeForge shows what the new file will carry (you can turn this off in Settings). Help is built in: press F1.
@@ -26,6 +26,7 @@ Everything saves to a new file. Before saving, ScribeForge shows what the new fi
 | [docs/Plan_Phase2.md](docs/Plan_Phase2.md) | Phase 2 (approved): the Forge tools, with test results and decisions |
 | [docs/Plan_Sign.md](docs/Plan_Sign.md) | Signing (stop 2e, approved): test results, libraries, design and decisions |
 | [docs/Plan_Phase3.md](docs/Plan_Phase3.md) | Phase 3 (approved): the Archive, with test results and decisions |
+| [docs/Plan_Phase4.md](docs/Plan_Phase4.md) | Phase 4 (approved): synced backups, contributing and releases, with test results and decisions |
 | [docs/Research_TextRemoval.md](docs/Research_TextRemoval.md) | Research (stop 2c): removing only what's under a redaction mark, with a prototype in [research/](research/) |
 | [docs/manual-tests/](docs/manual-tests/) | Step-by-step scripts for trying each stop, and [v1-full.md](docs/manual-tests/v1-full.md) for the installed app |
 | [content/help/](content/help/) | The help pages shown in the app (plain Markdown; edit them without touching code) |
@@ -37,7 +38,7 @@ Everything saves to a new file. Before saving, ScribeForge shows what the new fi
    ```bash
    npm run dist
    ```
-   It's saved as `release\ScribeForge Setup 1.8.0.exe`.
+   It's saved as `release\ScribeForge Setup 1.9.0.exe`.
 2. Run it. The installer isn't signed, so Windows shows "Windows protected your PC" the first time: click **More info**, then **Run anyway**.
 3. Choose **Only for me** and where to install it (your user folder by default; no administrator rights needed). ScribeForge is then in the Start menu.
 
@@ -104,7 +105,8 @@ npm run trial:reset
 | Command | What it does |
 |---|---|
 | `npm run trial` | Runs the app from source in trial mode |
-| `npm run trial:reset` | Deletes the trial data folder |
+| `npm run trial:second-pc` | Trial mode with a second data folder (`%APPDATA%\ScribeForge Trial (second PC)`), which acts as another PC: for trying backups that move between PCs |
+| `npm run trial:reset` | Deletes the trial data folders |
 | `npm run typecheck` | Checks the TypeScript |
 | `npm test` | Unit tests, including the style-guard, contrast and third-party-notice checks |
 | `npm run e2e` | Builds the app and runs the whole-app tests on it (Playwright) |
@@ -171,6 +173,7 @@ npm run trial:reset
     - Locking clears the key and the database from memory, and closes anything opened from the vault, a comparison of two versions included.
     - Every version is stored and encrypted like a document of its own, and checked against its checksum whenever it's opened. Comparing reads both versions in the sandboxed window, in memory only.
     - Tests search every file of the vault, and the backups, for the documents' text, titles, labels and notes, and find none.
+- **Automatic backups never send anything themselves.** They're written to a folder on this PC; OneDrive or Google Drive does the uploading. Everything in the backup folder is encrypted, and a backup is only used once all of it has arrived and checks out. Making a backup only lists the folder and reads file sizes, so files OneDrive keeps online only aren't downloaded. Backups are written and restored a piece at a time: a test checks that a 300 MB vault needs under 100 MB of extra memory.
 - **The Archive's history can't be quietly rewritten.** Each entry is sealed to the one before it with the vault's key, and the database refuses to change or remove entries. It records only actions and titles, never contents, labels or notes, so erasing a document leaves nothing else behind.
 - **Files locked by their author** (no password needed to open, but limits on copying or changes) can be viewed and their pages saved. ScribeForge says first that the new file won't have those limits.
 

@@ -8,6 +8,7 @@
 // - AES-256-GCM both hides the data and detects any change to it: a damaged or altered piece is
 //   refused, never used.
 import { createCipheriv, createDecipheriv, createHmac, hkdfSync, randomBytes, randomInt, scryptSync, timingSafeEqual } from 'node:crypto';
+import { closeSync, fstatSync, openSync, readSync } from 'node:fs';
 
 /** scrypt's cost: 2^17, about half a second (A5). Tests use a lower cost to run quickly. */
 export const DEFAULT_COST = 17;
@@ -68,6 +69,43 @@ export function unseal(key: Buffer, label: string, sealed: Uint8Array): Buffer {
 /** The key for one kind of data, worked out from the vault key. */
 export function subkey(vaultKey: Buffer, vaultId: string, purpose: string): Buffer {
   return Buffer.from(hkdfSync('sha256', vaultKey, Buffer.from(vaultId, 'base64'), purpose, 32));
+}
+
+/** One buffer for every piece read when checking files (this runs without pausing, so it's never shared). */
+const scratch = Buffer.alloc(1024 * 1024);
+
+/**
+ * Checks a sealed file on disk without holding it in memory: it's decrypted a piece at a time and
+ * the result thrown away, so only its seal is checked (stop 4a, restoring a backup).
+ */
+export function sealedFileSound(key: Buffer, label: string, file: string): boolean {
+  let fd: number | null = null;
+  try {
+    fd = openSync(file, 'r');
+    const size = fstatSync(fd).size;
+    if (size < MAGIC.length + NONCE + TAG) return false;
+    const head = Buffer.alloc(MAGIC.length + NONCE);
+    readSync(fd, head, 0, head.length, 0);
+    const tag = Buffer.alloc(TAG);
+    readSync(fd, tag, 0, TAG, size - TAG);
+    if (!head.subarray(0, MAGIC.length).equals(MAGIC)) return false;
+    const decipher = createDecipheriv('aes-256-gcm', key, head.subarray(MAGIC.length));
+    decipher.setAAD(Buffer.from(label));
+    decipher.setAuthTag(tag);
+    const piece = scratch;
+    for (let at = head.length; at < size - TAG; ) {
+      const n = readSync(fd, piece, 0, Math.min(piece.length, size - TAG - at), at);
+      if (n === 0) return false;
+      decipher.update(piece.subarray(0, n)).fill(0);
+      at += n;
+    }
+    decipher.final();
+    return true;
+  } catch {
+    return false;
+  } finally {
+    if (fd !== null) closeSync(fd);
+  }
 }
 
 export function hmac(key: Buffer, data: string | Uint8Array): Buffer {

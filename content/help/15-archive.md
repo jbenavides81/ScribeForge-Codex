@@ -85,7 +85,7 @@ Both versions are decrypted in memory only while you compare them. If the vault 
 ## Void, or erase for good
 
 - **Void…** hides a document, but keeps it in the vault, with your reason. Tick **Show voided documents** to see it again, and **Restore** to bring it back.
-- **Erase for good…** removes a document, every version of it, and everything about it from the vault. It can't be undone. Only its title and your reason stay, in the history. Copies already in backups aren't touched: restoring one of those brings the document back.
+- **Erase for good…** removes a document, every version of it, and everything about it from the vault. It can't be undone. Only its title and your reason stay, in the history. It's removed from automatic backups too. Backup files you saved yourself aren't touched: restoring one of those brings the document back.
 
 ## History
 
@@ -95,10 +95,45 @@ Each entry is sealed to the one before it, so a change made to the history outsi
 
 ## Backups
 
-- **Make a backup…** saves the whole vault, every version included, as one encrypted file (`.sfbackup`). Keep it somewhere other than this PC, such as a USB drive. The vault's password when you made it (or the recovery code) opens it.
-- **Restore a backup…** asks for that password or code, checks every part of the backup, says when it was made and how many documents it holds, and asks before replacing the vault on this PC. Anything added or changed since the backup was made is lost.
+There are two kinds, and you can use both: automatic backups to a backup folder, and backup files you make yourself. Both are encrypted: the vault's password (or recovery code) opens them.
 
-You can also restore a backup on a PC with no vault yet, from the Archive screen.
+### Automatic backups
+
+Under **Keeping the vault safe**, click **Turn on automatic backups…** and choose where:
+
+- **OneDrive** or **Google Drive**, when they're on this PC. Their folders are synced with the internet, so the backups are kept online too, and you can restore them on another PC.
+- **Choose another folder…**: any folder, such as one on a USB drive.
+
+A folder called **ScribeForge Archive backup** is made there, and the first backup is made straight away. After that, a backup is made whenever the vault locks or ScribeForge closes, if anything changed. **Back up now** makes one whenever you like.
+
+Each backup only adds what's new. A document is copied into the folder once; after that, each backup adds a small file (about the size of the vault's list of documents) and any new documents. **Backups to keep** says how many backups are kept (10 to start with); older ones are removed.
+
+ScribeForge never goes online itself: OneDrive or Google Drive does the uploading, from the folder on this PC. If the folder isn't there (OneDrive is signed out, or the USB drive is unplugged), the vault still locks at once, and the Archive says the backup didn't work.
+
+Someone who could open your OneDrive or Google Drive could see how many stored files there are, their sizes, and when backups were made. Everything else (titles, labels, notes, file names, words and pages) is encrypted.
+
+### Backup files
+
+- **Make a backup…** saves the whole vault, every version included, as one encrypted file (`.sfbackup`). Keep it somewhere other than this PC, such as a USB drive.
+- **Restore a backup…** restores one of these files.
+
+### Restoring
+
+**Restore a backup…** (a backup file) or **Restore from a backup folder…** asks for the password the vault had when the backup was made, or its recovery code. It checks the backup, says when it was made and how many documents it holds, and asks before replacing the vault on this PC. Anything added or changed since the backup was made is lost.
+
+From a backup folder, the newest complete backup is used. You can choose the **ScribeForge Archive backup** folder, or the folder it's in (such as OneDrive itself). If a newer backup is still arriving from another PC, ScribeForge says so: wait a few minutes and try again to use it.
+
+You can restore on a PC with no vault yet, from the Archive screen.
+
+### Using the vault on two PCs
+
+1. On the first PC, turn on automatic backups to OneDrive or Google Drive.
+2. On the second PC, sign in to the same OneDrive or Google Drive. In ScribeForge, click **Archive**, then **Restore from a backup folder…**, and choose the backup folder. Afterwards, click **Keep backing up** so changes made there are backed up too.
+3. From then on, when you unlock the vault on either PC and the other has made a newer backup, the Archive offers it: **Restore it…** brings this PC up to date.
+
+Use the vault on one PC at a time. If both PCs changed the vault since their last backup, ScribeForge says so before restoring: the changes on this PC are replaced, never combined.
+
+Erasing a document for good also removes it from the backup folder, older automatic backups included. OneDrive and Google Drive may keep deleted files in their own recycle bins for a while.
 
 ## Where it's kept
 

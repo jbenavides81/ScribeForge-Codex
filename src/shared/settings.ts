@@ -1,5 +1,5 @@
 import type { ThemeId } from './themes';
-import { VAULT_LOCK_MINUTES, type VaultLockMinutes } from './vault';
+import { BACKUP_KEEP, VAULT_LOCK_MINUTES, type BackupKeep, type VaultLockMinutes } from './vault';
 
 export type TextSize = 'standard' | 'large' | 'larger';
 /** How sharp redacted pages are, in dots per inch (Phase 0 plan, question 4). */
@@ -23,11 +23,26 @@ export interface Settings {
   trustedCertificates: string[];
   /** The Archive locks after this many minutes without using ScribeForge. */
   vaultLockMinutes: VaultLockMinutes;
+  /** The backup folder automatic backups go to (stop 4a); empty when they're off. */
+  archiveBackupFolder: string;
+  /** How many automatic backups of the vault the backup folder keeps. */
+  archiveBackupKeep: BackupKeep;
+  /** A random tag for this PC (this copy of ScribeForge), in the names of the backups it makes. Not a name. */
+  installId: string;
+  /** For each vault (by its tag): when it was last backed up or restored here, and what it held then, to tell whether it changed since. */
+  archiveBackupState: Record<string, { at: string; state: string }>;
+  /**
+   * Stored files erased for good that are still to be removed from the backup folder (it wasn't
+   * there when they were erased), by vault tag. Random names only.
+   */
+  archiveBackupErased: Record<string, string[]>;
 }
 
 export const MAX_RECENT = 10;
 export const MAX_TRUSTED = 100;
 export const MAX_AUTHOR_NAME = 100;
+/** Vaults whose last backup is remembered (one usually; more after restoring others). */
+export const MAX_BACKUP_STATES = 10;
 
 export const DEFAULT_SETTINGS: Settings = {
   version: 1,
@@ -41,6 +56,11 @@ export const DEFAULT_SETTINGS: Settings = {
   certificateFile: '',
   trustedCertificates: [],
   vaultLockMinutes: 10,
+  archiveBackupFolder: '',
+  archiveBackupKeep: 10,
+  installId: '',
+  archiveBackupState: {},
+  archiveBackupErased: {},
 };
 
 const THEMES: readonly ThemeId[] = ['cathedral', 'light', 'dark', 'high-contrast', 'system'];
@@ -52,7 +72,7 @@ const TEXT_SIZES: readonly TextSize[] = ['standard', 'large', 'larger'];
  */
 export function validateSettings(raw: unknown): { settings: Settings; problems: string[] } {
   const problems: string[] = [];
-  const settings: Settings = { ...DEFAULT_SETTINGS, recentFiles: [], trustedCertificates: [] };
+  const settings: Settings = { ...DEFAULT_SETTINGS, recentFiles: [], trustedCertificates: [], archiveBackupState: {}, archiveBackupErased: {} };
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
     return { settings, problems: ['the settings were not a list of values'] };
   }
@@ -105,6 +125,37 @@ export function validateSettings(raw: unknown): { settings: Settings; problems: 
   if (r.vaultLockMinutes !== undefined) {
     if (VAULT_LOCK_MINUTES.includes(r.vaultLockMinutes as VaultLockMinutes)) settings.vaultLockMinutes = r.vaultLockMinutes as VaultLockMinutes;
     else problems.push('vaultLockMinutes');
+  }
+  if (r.archiveBackupFolder !== undefined) {
+    if (typeof r.archiveBackupFolder === 'string' && r.archiveBackupFolder.length < 4096) settings.archiveBackupFolder = r.archiveBackupFolder;
+    else problems.push('archiveBackupFolder');
+  }
+  if (r.archiveBackupKeep !== undefined) {
+    if (BACKUP_KEEP.includes(r.archiveBackupKeep as BackupKeep)) settings.archiveBackupKeep = r.archiveBackupKeep as BackupKeep;
+    else problems.push('archiveBackupKeep');
+  }
+  if (r.installId !== undefined) {
+    if (typeof r.installId === 'string' && /^([0-9a-f]{12})?$/.test(r.installId)) settings.installId = r.installId;
+    else problems.push('installId');
+  }
+  if (r.archiveBackupState !== undefined) {
+    const state = r.archiveBackupState;
+    if (typeof state === 'object' && state !== null && !Array.isArray(state)) {
+      for (const [tag, v] of Object.entries(state as Record<string, unknown>).slice(0, MAX_BACKUP_STATES)) {
+        const entry = v as { at?: unknown; state?: unknown };
+        if (/^[0-9a-f]{12}$/.test(tag) && typeof entry?.at === 'string' && typeof entry.state === 'string' && entry.state.length < 100) settings.archiveBackupState[tag] = { at: entry.at, state: entry.state };
+      }
+    } else problems.push('archiveBackupState');
+  }
+  if (r.archiveBackupErased !== undefined) {
+    const erased = r.archiveBackupErased;
+    if (typeof erased === 'object' && erased !== null && !Array.isArray(erased)) {
+      for (const [tag, names] of Object.entries(erased as Record<string, unknown>).slice(0, MAX_BACKUP_STATES)) {
+        if (!/^[0-9a-f]{12}$/.test(tag) || !Array.isArray(names)) continue;
+        const list = names.filter((n): n is string => typeof n === 'string' && /^[0-9a-f-]{36}\.sealed$/.test(n)).slice(0, 10_000);
+        if (list.length) settings.archiveBackupErased[tag] = list;
+      }
+    } else problems.push('archiveBackupErased');
   }
   if (!settings.rememberRecent) {
     settings.recentFiles = [];

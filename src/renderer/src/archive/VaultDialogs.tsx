@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { MIN_VAULT_PASSWORD } from '../../../shared/vault';
+import { useEffect, useState } from 'react';
+import { MIN_VAULT_PASSWORD, type BackupCheck, type BackupPlace, type BackupStatus } from '../../../shared/vault';
 import { Dialog } from '../components/Dialog';
 import { formatDate } from '../details/describe';
 import { plural } from '../words';
@@ -154,11 +154,11 @@ export function ReasonDialog({
  * Restoring a backup: its password (or recovery code) checks every part of it first; then it
  * says when it was made and what it holds, and asks before replacing the vault.
  */
-export function RestoreBackupDialog({ name, replacing, onRestored, onCancel }: { name: string; replacing: boolean; onRestored: (documents: number) => void; onCancel: () => void }) {
+export function RestoreBackupDialog({ name, replacing, onRestored, onCancel }: { name: string; replacing: boolean; onRestored: (result: BackupCheck) => void; onCancel: () => void }) {
   const [kind, setKind] = useState<'password' | 'recovery'>('password');
   const [secret, setSecret] = useState('');
   const [problem, setProblem] = useState<string | null>(null);
-  const [checked, setChecked] = useState<{ created: string; documents: number } | null>(null);
+  const [checked, setChecked] = useState<BackupCheck | null>(null);
   const [busy, setBusy] = useState(false);
   const check = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -174,7 +174,7 @@ export function RestoreBackupDialog({ name, replacing, onRestored, onCancel }: {
     setBusy(true);
     const result = await api.vaultRestoreBackup(secret, kind, true);
     setBusy(false);
-    if (result.ok) onRestored(result.value.documents);
+    if (result.ok) onRestored(result.value);
     else setProblem(result.message);
   };
   return (
@@ -216,8 +216,16 @@ export function RestoreBackupDialog({ name, replacing, onRestored, onCancel }: {
       ) : (
         <>
           <p data-testid="backup-checked">
-            The backup is complete and undamaged. It was made on {formatDate(checked.created)} and holds {plural(checked.documents, 'document')}.
+            {checked.checkedAll
+              ? `The backup is complete and undamaged. It was made on ${formatDate(checked.created)} and holds ${plural(checked.documents, 'document')}.`
+              : `The backup is complete. It was made on ${formatDate(checked.created)} and holds ${plural(checked.documents, 'document')}. Each stored file is checked as it's restored.`}
           </p>
+          {(checked.waiting ?? 0) > 0 && (
+            <p className="sf-muted">
+              A newer backup in the folder is still arriving, probably from another PC. This is the newest one that has arrived in full. To use the newer one, cancel
+              and try again in a few minutes.
+            </p>
+          )}
           {replacing && (
             <p className="sf-banner sf-notice">
               Restoring it replaces the vault on this PC. Anything added or changed since the backup was made is lost.
@@ -238,6 +246,89 @@ export function RestoreBackupDialog({ name, replacing, onRestored, onCancel }: {
           </div>
         </>
       )}
+    </Dialog>
+  );
+}
+
+/**
+ * Turning on automatic backups (stop 4a): OneDrive's or Google Drive's folder when they're on this
+ * PC, or any folder. The first backup is made straight away.
+ */
+export function BackupPlaceDialog({ onCancel, onDone }: { onCancel: () => void; onDone: (status: BackupStatus) => void }) {
+  const [places, setPlaces] = useState<BackupPlace[] | null>(null);
+  const [chosen, setChosen] = useState<string | null>(null);
+  const [other, setOther] = useState<string | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    let current = true;
+    void api.vaultBackupPlaces().then((found) => {
+      if (!current) return;
+      setPlaces(found);
+      setChosen((c) => c ?? found[0]?.path ?? null);
+    });
+    return () => {
+      current = false;
+    };
+  }, []);
+  const chooseOther = async () => {
+    const folder = await api.vaultChooseBackupPlace();
+    if (!folder) return;
+    setOther(folder);
+    setChosen(folder);
+  };
+  const turnOn = async () => {
+    if (!chosen) return;
+    setBusy(true);
+    const result = await api.vaultBackupOn(chosen);
+    setBusy(false);
+    if (result.ok) onDone(result.value);
+    else setProblem(result.message);
+  };
+  return (
+    <Dialog title="Automatic backups" onCancel={onCancel} testId="backup-place-dialog">
+      <p>
+        Choose where ScribeForge keeps backups of the vault. A folder that OneDrive or Google Drive syncs keeps them online too, so you can restore them on another PC.
+        A USB drive works as well.
+      </p>
+      <fieldset className="sf-split-choices">
+        <legend className="sf-strong">Keep backups in</legend>
+        {places === null && <p className="sf-muted">Looking for OneDrive and Google Drive…</p>}
+        {places?.map((p) => (
+          <label key={p.path} className="sf-choice">
+            <input type="radio" name="backup-place" checked={chosen === p.path} onChange={() => setChosen(p.path)} />
+            <span>
+              {p.name} <span className="sf-muted">({p.path})</span>
+            </span>
+          </label>
+        ))}
+        {other && (
+          <label className="sf-choice">
+            <input type="radio" name="backup-place" checked={chosen === other} onChange={() => setChosen(other)} />
+            <span>{other}</span>
+          </label>
+        )}
+        <button type="button" className="sf-link-button" onClick={() => void chooseOther()}>
+          Choose another folder…
+        </button>
+      </fieldset>
+      <p className="sf-muted">
+        A folder called “ScribeForge Archive backup” is made there. A backup is made now, and then whenever the vault locks or ScribeForge closes, if anything changed.
+        Everything in it is encrypted.
+      </p>
+      {problem && (
+        <p className="sf-error" role="alert">
+          {problem}
+        </p>
+      )}
+      <div className="sf-dialog-buttons">
+        <button type="button" className="sf-button" onClick={onCancel}>
+          Cancel
+        </button>
+        <button type="button" className="sf-button sf-primary" disabled={!chosen || busy} onClick={() => void turnOn()}>
+          {busy ? 'Making the first backup…' : 'Turn on'}
+        </button>
+      </div>
     </Dialog>
   );
 }

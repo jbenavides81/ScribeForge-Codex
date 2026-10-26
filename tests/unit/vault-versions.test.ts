@@ -100,10 +100,11 @@ describe('versions', () => {
 
   it('a backup keeps every version, and they restore exactly', () => {
     const { vault, doc } = withTwoVersions();
-    const backup = vault.backup();
+    const file = path.join(dir, 'versions.sfbackup');
+    vault.backup(file);
     vault.addVersion(doc.id, { fileName: 'later.pdf', pages: 1, bytes: pdf('LATER'), pageTexts: ['later'] });
     expect(vault.versions(doc.id)).toHaveLength(3);
-    vault.restoreBackup(backup, PASSWORD);
+    vault.restoreBackup({ file }, PASSWORD);
     const list = vault.versions(doc.id);
     expect(list).toHaveLength(2);
     expect(Buffer.from(vault.readVersion(list[0].id)).toString()).toContain('FIRST');
