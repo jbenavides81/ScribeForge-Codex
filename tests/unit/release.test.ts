@@ -6,7 +6,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { changelogSection, checksumFile, isUpdateFile, personalDetails, refusals, releaseNotes } from '../../scripts/release-checks.mjs';
+import { changelogSection, checksumFile, isUpdateFile, personalDetails, refusals, releaseFileNames, releaseNotes } from '../../scripts/release-checks.mjs';
 import { ROOT } from './support/inspect';
 
 /** A file's text, with Windows line endings (as Git checks files out on Windows) made plain. */
@@ -15,7 +15,7 @@ const { version } = JSON.parse(read('package.json')) as { version: string };
 const changelog = read('CHANGELOG.md');
 const ready = { version: '1.10.0', changes: [] as string[], branch: 'main', tags: ['v1.9.0'], changelog: '## 1.10.0 (2026-10-26)\n\n- New things.\n\n## 1.9.0\n\n- Old things.\n', noticesFresh: true };
 const sums = [
-  { name: 'ScribeForge Setup 1.10.0.exe', sha256: 'a'.repeat(64) },
+  { name: 'ScribeForge-Setup-1.10.0.exe', sha256: 'a'.repeat(64) },
   { name: 'ScribeForge.exe', sha256: 'b'.repeat(64) },
   { name: 'resources/app.asar', sha256: 'c'.repeat(64) },
 ];
@@ -57,15 +57,24 @@ describe('the release script refuses', () => {
 });
 
 describe('the release files', () => {
+  it('have names without spaces, which GitHub keeps as they are (it turned them into dots for 1.10.0); the installer is named as the build names it', () => {
+    const names = releaseFileNames('1.11.0');
+    expect(names).toEqual({ installer: 'ScribeForge-Setup-1.11.0.exe', sums: 'ScribeForge-1.11.0-SHA256SUMS.txt', notes: 'ScribeForge-1.11.0-notes.md' });
+    for (const name of Object.values(names)) expect(name).toMatch(/^[\w.-]+$/);
+    const artifact = /^ {2}artifactName: (.+)$/m.exec(read('electron-builder.yml'))?.[1];
+    expect(artifact?.replace('${productName}', 'ScribeForge').replace('${version}', '1.11.0').replace('${ext}', 'exe')).toBe(names.installer);
+  });
+
   it('the checksum file is in the layout sha256sum and Get-FileHash comparisons expect', () => {
     const text = checksumFile(sums);
-    expect(text.split('\n').filter(Boolean)).toEqual([`${'a'.repeat(64)}  ScribeForge Setup 1.10.0.exe`, `${'b'.repeat(64)}  ScribeForge.exe`, `${'c'.repeat(64)}  resources/app.asar`]);
+    expect(text.split('\n').filter(Boolean)).toEqual([`${'a'.repeat(64)}  ScribeForge-Setup-1.10.0.exe`, `${'b'.repeat(64)}  ScribeForge.exe`, `${'c'.repeat(64)}  resources/app.asar`]);
   });
 
   it("the notes give what's new, how to install, and how to check the download, with the installer's checksum as PowerShell shows it", () => {
     const notes = releaseNotes('1.10.0', '- New things.', sums);
     expect(notes).toMatch(/^# ScribeForge 1\.10\.0\n\n- New things\.\n/);
-    expect(notes).toContain('Get-FileHash ".\\ScribeForge Setup 1.10.0.exe"');
+    expect(notes).toContain('Get-FileHash ".\\ScribeForge-Setup-1.10.0.exe"');
+    expect(notes).toContain('**ScribeForge-1.10.0-SHA256SUMS.txt**');
     expect(notes).toContain('A'.repeat(64));
     expect(notes).toContain(`| \`resources/app.asar\` | \`${'c'.repeat(64)}\` |`);
     expect(notes).toContain('Windows protected your PC');
@@ -80,8 +89,8 @@ describe('the release files', () => {
   });
 
   it('only the installer, the checksum file and the notes: the build makes no update files', () => {
-    expect(['latest.yml', 'ScribeForge Setup 1.10.0.exe.blockmap'].every(isUpdateFile)).toBe(true);
-    expect(['ScribeForge Setup 1.10.0.exe', 'ScribeForge 1.10.0 SHA256SUMS.txt'].some(isUpdateFile)).toBe(false);
+    expect(['latest.yml', 'ScribeForge-Setup-1.10.0.exe.blockmap'].every(isUpdateFile)).toBe(true);
+    expect(['ScribeForge-Setup-1.10.0.exe', 'ScribeForge-1.10.0-SHA256SUMS.txt'].some(isUpdateFile)).toBe(false);
     const builder = read('electron-builder.yml');
     expect(builder).toMatch(/^publish: null$/m);
     expect(builder).toMatch(/^ {2}differentialPackage: false$/m);

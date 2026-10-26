@@ -18,7 +18,7 @@ import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSyn
 import { userInfo } from 'node:os';
 import path from 'node:path';
 import { noticesText } from './make-notices.mjs';
-import { changelogSection, checksumFile, isUpdateFile, personalDetails, refusals, releaseNotes } from './release-checks.mjs';
+import { changelogSection, checksumFile, isUpdateFile, personalDetails, refusals, releaseFileNames, releaseNotes } from './release-checks.mjs';
 
 const practice = process.argv.includes('--practice');
 const { version } = JSON.parse(readFileSync('package.json', 'utf8'));
@@ -65,7 +65,8 @@ if (!practice) {
 // 3. The installer, and the app built a second time.
 const started = Date.now();
 run('npm run dist');
-const installerName = `ScribeForge Setup ${version}.exe`;
+const names = releaseFileNames(version);
+const installerName = names.installer;
 const installer = path.join('release', installerName);
 const appFiles = [
   { name: 'ScribeForge.exe', file: path.join('release', 'win-unpacked', 'ScribeForge.exe') },
@@ -84,8 +85,8 @@ if (again.length) stop([`${again.map((a) => a.name).join(' and ')} came out diff
 const outDir = practice ? path.join('release', 'practice') : 'release';
 mkdirSync(outDir, { recursive: true });
 if (practice) copyFileSync(installer, path.join(outDir, installerName));
-const sumsName = `ScribeForge ${version} SHA256SUMS.txt`;
-const notesName = `ScribeForge ${version} notes.md`;
+const sumsName = names.sums;
+const notesName = names.notes;
 const sumsText = checksumFile(sums);
 const notesText = releaseNotes(version, section ?? '', sums);
 const personal = [...personalDetails(sumsText, userInfo().username), ...personalDetails(notesText, userInfo().username)];

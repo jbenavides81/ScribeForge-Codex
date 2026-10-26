@@ -39,7 +39,8 @@ nsis:
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
-  artifactName: ${productName} Setup ${version}.${ext}
+  # No spaces: GitHub turns them into dots when a release's files are uploaded (found with 1.10.0).
+  artifactName: ${productName}-Setup-${version}.${ext}
   differentialPackage: false
   shortcutName: ScribeForge
   uninstallDisplayName: ScribeForge

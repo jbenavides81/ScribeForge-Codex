@@ -21,9 +21,9 @@ npm run trial
 npm run release -- --practice
 ```
    **It builds the installer, builds the app a second time, then says "Practice release files for ScribeForge 1.10.0, in release\practice", "The app's own files came out the same on two builds", and that the files aren't for publishing.**
-5. Open `release\practice`. **Three files: ScribeForge Setup 1.10.0.exe, ScribeForge 1.10.0 SHA256SUMS.txt and ScribeForge 1.10.0 notes.md.** No `.blockmap` or `.yml` file for 1.10.0 in `release` either.
+5. Open `release\practice`. **Three files, with no spaces in their names: ScribeForge-Setup-1.10.0.exe, ScribeForge-1.10.0-SHA256SUMS.txt and ScribeForge-1.10.0-notes.md.** No `.blockmap` or `.yml` file for 1.10.0 in `release` either.
 6. Open the notes in Notepad. **What's new in 1.10.0 (from CHANGELOG.md), how to install, and how to check the download, with the installer's checksum. No folder paths with your name, and no email addresses.**
-7. In File Explorer, open `release\practice`, type `powershell` in the address bar and press Enter. Type `Get-FileHash ".\ScribeForge Setup 1.10.0.exe"` and press Enter. **The Hash is the same as the one in the notes.**
+7. In File Explorer, open `release\practice`, type `powershell` in the address bar and press Enter. Type `Get-FileHash ".\ScribeForge-Setup-1.10.0.exe"` and press Enter. **The Hash is the same as the one in the notes.**
 
 ## The release script refuses when it should
 
@@ -45,7 +45,7 @@ Only after stop 4c is committed (the script refuses uncommitted changes).
 
 ## Optional: installing and checking the app's own files (about 10 minutes)
 
-11. Run `release\practice\ScribeForge Setup 1.10.0.exe` (or `release\` after step 10). Windows warns that it's unsigned: **More info**, then **Run anyway**. Install **Only for me**.
+11. Run `release\practice\ScribeForge-Setup-1.10.0.exe` (or `release\` after step 10). Windows warns that it's unsigned: **More info**, then **Run anyway**. Install **Only for me**.
 12. Open the folder it was installed in (usually `%LOCALAPPDATA%\Programs\ScribeForge`) in PowerShell, as in step 7. Run `Get-FileHash .\ScribeForge.exe` and `Get-FileHash .\resources\app.asar`. **Both match the SHA256SUMS file.** _Needs verification: this is the first check of the installed files._
 13. Uninstall it in **Settings > Apps > Installed apps** if you don't want to keep it.
 

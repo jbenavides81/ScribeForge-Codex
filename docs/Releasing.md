@@ -6,9 +6,11 @@ How a version is numbered, described, built, checked and published (stop 4c, [Pl
 
 Three things, and nothing else:
 
-- **The installer,** `ScribeForge Setup 1.10.0.exe`.
-- **The checksum file,** `ScribeForge 1.10.0 SHA256SUMS.txt`. It holds SHA-256 checksums for the installer, and for the app's own files as installed: `ScribeForge.exe` and `resources/app.asar`.
+- **The installer,** `ScribeForge-Setup-1.11.0.exe`.
+- **The checksum file,** `ScribeForge-1.11.0-SHA256SUMS.txt`. It holds SHA-256 checksums for the installer, and for the app's own files as installed: `ScribeForge.exe` and `resources/app.asar`.
 - **The release notes,** made from the version's section of [CHANGELOG.md](../CHANGELOG.md). They also say how to install and how to check the download.
+
+The names have no spaces: GitHub turns spaces into dots when files are uploaded, which made 1.10.0's downloads `ScribeForge.Setup.1.10.0.exe` and `ScribeForge.1.10.0.SHA256SUMS.txt` (its notes were corrected after publishing).
 
 No files for automatic updates: ScribeForge never checks for updates, so the build doesn't make them (`publish: null` in `electron-builder.yml`).
 

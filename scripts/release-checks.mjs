@@ -1,6 +1,15 @@
 // The checks and the words of a release (stop 4c, docs/Plan_Phase4.md section 6), apart from the
 // script that runs them (scripts/release.mjs), so the tests can check every one.
 
+/**
+ * The names of a release's files. No spaces: GitHub turns spaces into dots when files are uploaded,
+ * and then the names in the notes and the checksum file wouldn't match the downloads (found with
+ * 1.10.0). The installer's name must match electron-builder.yml's artifactName.
+ */
+export function releaseFileNames(version) {
+  return { installer: `ScribeForge-Setup-${version}.exe`, sums: `ScribeForge-${version}-SHA256SUMS.txt`, notes: `ScribeForge-${version}-notes.md` };
+}
+
 /** The changelog's section for a version (without its heading), or null if there isn't one. */
 export function changelogSection(changelog, version) {
   const lines = changelog.replace(/\r\n/g, '\n').split('\n');
@@ -34,7 +43,8 @@ export function checksumFile(entries) {
 
 /** The release notes: what's new (from the changelog), installing, and checking the download. */
 export function releaseNotes(version, section, sums) {
-  const installer = sums.find((s) => s.name.endsWith('.exe') && s.name.startsWith('ScribeForge Setup'));
+  const names = releaseFileNames(version);
+  const installer = sums.find((s) => s.name === names.installer);
   const app = sums.filter((s) => s !== installer);
   return `# ScribeForge ${version}
 
@@ -60,7 +70,7 @@ The Hash should be:
 ${installer.sha256.toUpperCase()}
 \`\`\`
 
-The same checksums are in **ScribeForge ${version} SHA256SUMS.txt**, with these for the app's own files, in the folder ScribeForge is installed in:
+The same checksums are in **${names.sums}**, with these for the app's own files, in the folder ScribeForge is installed in:
 
 | File | SHA-256 |
 |---|---|

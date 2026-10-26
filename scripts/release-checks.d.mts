@@ -11,6 +11,7 @@ export interface Checksum {
   name: string;
   sha256: string;
 }
+export function releaseFileNames(version: string): { installer: string; sums: string; notes: string };
 export function changelogSection(changelog: string, version: string): string | null;
 export function refusals(state: ReleaseState): string[];
 export function checksumFile(entries: Checksum[]): string;

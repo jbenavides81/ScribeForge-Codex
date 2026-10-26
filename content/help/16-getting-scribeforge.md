@@ -4,7 +4,7 @@ New versions of ScribeForge are published on its releases page. **About** has a 
 
 ## Installing a new version
 
-1. On the releases page, download **ScribeForge Setup** with the newest version number.
+1. On the releases page, download the **ScribeForge Setup** file (an `.exe`) with the newest version number.
 2. Run it. Your settings, recent files and the Archive's vault stay as they are.
 
 The installer isn't signed, so Windows shows "Windows protected your PC" the first time: click **More info**, then **Run anyway**. Signing costs money or needs the project to meet other conditions, so ScribeForge isn't signed for now. Checking the download, below, shows it's the one published.
@@ -14,7 +14,7 @@ The installer isn't signed, so Windows shows "Windows protected your PC" the fir
 Each release lists a checksum for its installer: a long code that changes completely if even one byte of the file is different.
 
 1. Open **PowerShell** in the folder you downloaded the installer to (in File Explorer, type `powershell` in the address bar and press Enter).
-2. Type `Get-FileHash ".\ScribeForge Setup 1.10.0.exe"`, with the version you downloaded, and press Enter.
+2. Type `Get-FileHash ".\ScribeForge-Setup-1.11.0.exe"`, with the name of the file you downloaded, and press Enter. (Version 1.10.0's file is called `ScribeForge.Setup.1.10.0.exe`.)
 3. Compare the **Hash** it shows with the one on the releases page. If they're the same, the download is exactly the one published.
 
 The releases page also lists checksums for ScribeForge's own files, `ScribeForge.exe` and `resources\app.asar`, in the folder it's installed in. These come out the same every time a version is built, so someone who builds ScribeForge from its source code can check the app matches it.

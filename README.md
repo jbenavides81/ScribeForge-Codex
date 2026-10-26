@@ -42,7 +42,7 @@ Everything saves to a new file. Before saving, ScribeForge shows what the new fi
    ```bash
    npm run dist
    ```
-   It's saved as `release\ScribeForge Setup 1.10.0.exe`. (Published releases, with checksums to check a download, are on the [releases page](https://github.com/jbenavides81/ScribeForge-Codex/releases); see the **Getting ScribeForge** help page.)
+   It's saved as `release\ScribeForge-Setup-1.10.0.exe`. (Published releases, with checksums to check a download, are on the [releases page](https://github.com/jbenavides81/ScribeForge-Codex/releases); see the **Getting ScribeForge** help page.)
 2. Run it. The installer isn't signed, so Windows shows "Windows protected your PC" the first time: click **More info**, then **Run anyway**.
 3. Choose **Only for me** and where to install it (your user folder by default; no administrator rights needed). ScribeForge is then in the Start menu.
 
@@ -115,7 +115,7 @@ npm run trial:reset
 | `npm test` | Unit tests, including the style-guard, contrast and third-party-notice checks |
 | `npm run e2e` | Builds the app and runs the whole-app tests on it (Playwright) |
 | `npm run e2e:packaged` | Builds the installed-app version (`release\win-unpacked`) and runs every whole-app test on it |
-| `npm run dist` | Builds the Windows installer: `release\ScribeForge Setup <version>.exe` |
+| `npm run dist` | Builds the Windows installer: `release\ScribeForge-Setup-<version>.exe` |
 | `npm run release` | Makes a release's files (installer, checksums, notes) after every check and test; never publishes. See [docs/Releasing.md](docs/Releasing.md) |
 | `npm run fixtures` | Makes the test PDFs, and the made-up test certificates for signing |
 | `npm run notices` | Rebuilds `THIRD-PARTY-NOTICES.md` from the installed packages |
