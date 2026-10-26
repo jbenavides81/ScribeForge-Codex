@@ -1,8 +1,10 @@
 // Writes THIRD-PARTY-NOTICES.md: every package whose code or files ship inside the app, with its
 // version, licence and full licence text, read from node_modules.
 //   node scripts/make-notices.mjs
+// The release script (scripts/release.mjs) uses noticesText() to check the file is up to date.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 // Keep in step with tests/unit/notices.test.ts.
 export const SHIPPED = [
@@ -35,11 +37,18 @@ function licenceText(dir) {
   throw new Error(`No licence file in ${dir}`);
 }
 
-let out = '# Third-party notices\n\nScribeForge includes the following open-source software. Thank you to everyone who made it.\n';
-for (const { name, dir: where, what } of SHIPPED) {
-  const dir = path.resolve('node_modules', where ?? name);
-  const pkg = JSON.parse(readFileSync(path.join(dir, 'package.json'), 'utf8'));
-  out += `\n---\n\n## ${pkg.name} ${pkg.version}\n\n${what}. Licence: ${pkg.license}.\n\n${licenceText(dir)}\n`;
+/** What THIRD-PARTY-NOTICES.md should say, from the packages installed now. */
+export function noticesText(root = process.cwd()) {
+  let out = '# Third-party notices\n\nScribeForge includes the following open-source software. Thank you to everyone who made it.\n';
+  for (const { name, dir: where, what } of SHIPPED) {
+    const dir = path.resolve(root, 'node_modules', where ?? name);
+    const pkg = JSON.parse(readFileSync(path.join(dir, 'package.json'), 'utf8'));
+    out += `\n---\n\n## ${pkg.name} ${pkg.version}\n\n${what}. Licence: ${pkg.license}.\n\n${licenceText(dir)}\n`;
+  }
+  return out.replace(/\r\n/g, '\n');
 }
-writeFileSync('THIRD-PARTY-NOTICES.md', out.replace(/\r\n/g, '\n'));
-console.log(`Wrote THIRD-PARTY-NOTICES.md (${SHIPPED.length} packages)`);
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  writeFileSync('THIRD-PARTY-NOTICES.md', noticesText());
+  console.log(`Wrote THIRD-PARTY-NOTICES.md (${SHIPPED.length} packages)`);
+}

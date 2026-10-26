@@ -4,7 +4,7 @@ An open-source, offline PDF toolkit for Windows: view, organise, annotate, inspe
 
 ScribeForge never sends anything over the network, and it never changes the files you open: edits save to new files.
 
-**Status:** Phase 4 (backups, contributing and releases) is under way. Version 1.9.0. You can:
+**Status:** Phase 4 (backups, contributing and releases) is complete, the last phase in the roadmap. Version 1.10.0. You can:
 - open, view, search and copy from PDFs;
 - on the Pages screen, merge, split, reorder, rotate, delete, extract and insert blank pages;
 - on the Document screen, highlight, underline and strike out text; add notes, text boxes, drawings, shapes (rectangles, ellipses, lines and arrows) and stamps; move and resize them; see every annotation in the comments panel; reply to comments; change or delete annotations already in the file; and burn annotations into the page;
@@ -27,6 +27,8 @@ Everything saves to a new file. Before saving, ScribeForge shows what the new fi
 | [docs/Plan_Sign.md](docs/Plan_Sign.md) | Signing (stop 2e, approved): test results, libraries, design and decisions |
 | [docs/Plan_Phase3.md](docs/Plan_Phase3.md) | Phase 3 (approved): the Archive, with test results and decisions |
 | [docs/Plan_Phase4.md](docs/Plan_Phase4.md) | Phase 4 (approved): synced backups, contributing and releases, with test results and decisions |
+| [CHANGELOG.md](CHANGELOG.md) | What each version added, and what version numbers mean |
+| [docs/Releasing.md](docs/Releasing.md) | How a release is built, checked and published |
 | [docs/Research_TextRemoval.md](docs/Research_TextRemoval.md) | Research (stop 2c): removing only what's under a redaction mark, with a prototype in [research/](research/) |
 | [docs/manual-tests/](docs/manual-tests/) | Step-by-step scripts for trying each stop, and [v1-full.md](docs/manual-tests/v1-full.md) for the installed app |
 | [content/help/](content/help/) | The help pages shown in the app (plain Markdown; edit them without touching code) |
@@ -40,7 +42,7 @@ Everything saves to a new file. Before saving, ScribeForge shows what the new fi
    ```bash
    npm run dist
    ```
-   It's saved as `release\ScribeForge Setup 1.9.0.exe`.
+   It's saved as `release\ScribeForge Setup 1.10.0.exe`. (Published releases, with checksums to check a download, are on the [releases page](https://github.com/jbenavides81/ScribeForge-Codex/releases); see the **Getting ScribeForge** help page.)
 2. Run it. The installer isn't signed, so Windows shows "Windows protected your PC" the first time: click **More info**, then **Run anyway**.
 3. Choose **Only for me** and where to install it (your user folder by default; no administrator rights needed). ScribeForge is then in the Start menu.
 
@@ -114,6 +116,7 @@ npm run trial:reset
 | `npm run e2e` | Builds the app and runs the whole-app tests on it (Playwright) |
 | `npm run e2e:packaged` | Builds the installed-app version (`release\win-unpacked`) and runs every whole-app test on it |
 | `npm run dist` | Builds the Windows installer: `release\ScribeForge Setup <version>.exe` |
+| `npm run release` | Makes a release's files (installer, checksums, notes) after every check and test; never publishes. See [docs/Releasing.md](docs/Releasing.md) |
 | `npm run fixtures` | Makes the test PDFs, and the made-up test certificates for signing |
 | `npm run notices` | Rebuilds `THIRD-PARTY-NOTICES.md` from the installed packages |
 | `npm run icons` | Redraws the app icon (`build/icon.png`, `build/icon.ico`) and its contact sheet (`docs/icon-sheet.png`) |

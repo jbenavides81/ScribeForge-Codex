@@ -30,6 +30,8 @@ electronFuses:
   enableCookieEncryption: false
   loadBrowserProcessSpecificV8Snapshot: false
 npmRebuild: false
+# ScribeForge never checks for updates, so no files for automatic updates are made (stop 4c).
+publish: null
 win:
   target: nsis
   icon: build/icon.ico
@@ -38,6 +40,7 @@ nsis:
   perMachine: false
   allowToChangeInstallationDirectory: true
   artifactName: ${productName} Setup ${version}.${ext}
+  differentialPackage: false
   shortcutName: ScribeForge
   uninstallDisplayName: ScribeForge
   installerIcon: build/icon.ico

@@ -2,7 +2,8 @@ import { expect, test } from '@playwright/test';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { PRESETS } from '../../src/shared/themes';
-import { choose, blockedRequests, goTo, launch, openFixture, setTheme, waitForFirstPage, VERSION } from './helpers';
+import { RELEASES_URL } from '../../src/shared/project';
+import { choose, blockedRequests, goTo, launch, openedLinks, openFixture, recordOpenedLinks, setTheme, waitForFirstPage, VERSION } from './helpers';
 
 test('starts on the Start screen, shows About, and makes no network requests', async ({}, info) => {
   const run = await launch(info.project.name);
@@ -18,6 +19,11 @@ test('starts on the Start screen, shows About, and makes no network requests', a
   await win.getByText('Third-party notices', { exact: true }).click();
   await expect(win.getByTestId('notices')).toContainText('pdfjs-dist 6.4.299');
   await expect(win.getByTestId('notices')).toContainText('Apache License');
+  // The releases page opens in the browser, only when asked; ScribeForge itself requests nothing.
+  await recordOpenedLinks(app);
+  await expect(win.getByTestId('releases-address')).toHaveText(RELEASES_URL);
+  await win.getByRole('button', { name: 'Open the releases page in your browser' }).click();
+  await expect.poll(() => openedLinks(app)).toEqual([RELEASES_URL]);
   expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getTitle())).toBe('ScribeForge');
   expect(await blockedRequests(app)).toEqual([]);
   await app.close();

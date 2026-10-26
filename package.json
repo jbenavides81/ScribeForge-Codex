@@ -1,7 +1,7 @@
 {
   "name": "scribeforge",
   "productName": "ScribeForge",
-  "version": "1.9.0",
+  "version": "1.10.0",
   "description": "An open-source, offline PDF toolkit for Windows. A BC6 app.",
   "license": "Apache-2.0",
   "author": "BC6",
@@ -26,7 +26,8 @@
     "e2e": "npm run build && npm run fixtures && playwright test --project=dev",
     "pack": "npm run build && electron-builder --dir",
     "e2e:packaged": "npm run pack && npm run fixtures && playwright test --project=packaged",
-    "dist": "npm run build && electron-builder"
+    "dist": "npm run build && electron-builder",
+    "release": "node scripts/release.mjs"
   },
   "devDependencies": {
     "@cantoo/pdf-lib": "2.11.1",

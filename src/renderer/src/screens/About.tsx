@@ -1,5 +1,8 @@
 import notices from '../../../../THIRD-PARTY-NOTICES.md?raw';
+import { RELEASES_URL } from '../../../shared/project';
 import { Icon } from '../components/Icon';
+
+const api = window.scribeforge;
 
 export function About({ version, trial }: { version: string; trial: boolean }) {
   return (
@@ -23,6 +26,16 @@ export function About({ version, trial }: { version: string; trial: boolean }) {
       <p>
         ScribeForge is open-source software under the Apache License 2.0.
       </p>
+      <section className="sf-section" aria-labelledby="about-releases">
+        <h2 id="about-releases">New versions</h2>
+        <p>ScribeForge never checks for new versions itself. They're published on its releases page, with what's new and how to check the download.</p>
+        <button type="button" className="sf-button" onClick={() => void api.openLink(RELEASES_URL)}>
+          Open the releases page in your browser
+        </button>
+        <p className="sf-muted sf-address" data-testid="releases-address">
+          {RELEASES_URL}
+        </p>
+      </section>
       <details className="sf-section sf-notices">
         <summary>Third-party notices</summary>
         <pre data-testid="notices">{notices}</pre>

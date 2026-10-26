@@ -7,8 +7,9 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ROOT } from './support/inspect';
 
-const read = (file: string) => readFileSync(path.join(ROOT, file), 'utf8');
-const GUIDES = ['CONTRIBUTING.md', 'SECURITY.md', 'CODE_OF_CONDUCT.md', '.github/pull_request_template.md', 'README.md'];
+/** A file's text, with Windows line endings (as Git checks files out on Windows) made plain. */
+const read = (file: string) => readFileSync(path.join(ROOT, file), 'utf8').replace(/\r\n/g, '\n');
+const GUIDES = ['CONTRIBUTING.md', 'SECURITY.md', 'CODE_OF_CONDUCT.md', '.github/pull_request_template.md', 'README.md', 'CHANGELOG.md', 'docs/Releasing.md'];
 
 /** A heading's anchor, as GitHub makes it. */
 const slug = (heading: string) =>
