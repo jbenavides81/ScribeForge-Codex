@@ -30,7 +30,9 @@ Everything saves to a new file. Before saving, ScribeForge shows what the new fi
 | [docs/Research_TextRemoval.md](docs/Research_TextRemoval.md) | Research (stop 2c): removing only what's under a redaction mark, with a prototype in [research/](research/) |
 | [docs/manual-tests/](docs/manual-tests/) | Step-by-step scripts for trying each stop, and [v1-full.md](docs/manual-tests/v1-full.md) for the installed app |
 | [content/help/](content/help/) | The help pages shown in the app (plain Markdown; edit them without touching code) |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | How to work on ScribeForge |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | How to work on ScribeForge, report a problem or suggest an idea, and how changes are reviewed |
+| [SECURITY.md](SECURITY.md) | How to report a security problem privately |
+| [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | How everyone taking part is asked to behave |
 
 ## Installing ScribeForge
 

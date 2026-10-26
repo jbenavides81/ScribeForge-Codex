@@ -1,0 +1,24 @@
+name: Suggest an idea
+description: Something ScribeForge could do, or do better.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you. ScribeForge is built in planned steps (see docs/Roadmap.md), and some things it will never do: it never goes online, and it never changes the files you open. An idea that keeps to those rules is the most likely to be taken up.
+  - type: textarea
+    id: need
+    attributes:
+      label: What you'd like to do
+      description: The task, in your own words. For example, "fill in a form and save it".
+    validations:
+      required: true
+  - type: textarea
+    id: today
+    attributes:
+      label: How you do it today
+      description: With ScribeForge or another program, if at all.
+  - type: textarea
+    id: more
+    attributes:
+      label: Anything else

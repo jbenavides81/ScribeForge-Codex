@@ -1,0 +1,59 @@
+# The checks every change must pass (stop 4b, docs/Plan_Phase4.md section 5), on GitHub's Windows
+# machines: install from the lock file, typecheck, unit tests, then the whole-app tests on the
+# development build, which include the zero-network check. Before a release, the same whole-app
+# tests run on the packaged app (Actions > Checks > Run workflow).
+#
+# Pull requests from other people's copies of the repo get read-only access and no secrets. Each
+# of GitHub's building blocks is pinned to an exact version (a commit), so it can't change under us.
+name: Checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      packaged:
+        description: Also run the whole-app tests on the packaged app (before a release)
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Typecheck, unit tests and whole-app tests
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: Get the code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install the packages (exactly as in the lock file)
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Whole-app tests on the development build
+        run: npm run e2e
+
+      - name: Whole-app tests on the packaged app
+        if: github.event_name == 'workflow_dispatch' && inputs.packaged
+        run: npm run e2e:packaged

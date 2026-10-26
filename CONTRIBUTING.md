@@ -2,6 +2,14 @@
 
 Thank you for helping. ScribeForge is an offline PDF toolkit for Windows, built by BC6 and open to everyone under the Apache License 2.0.
 
+Everyone taking part follows the [code of conduct](CODE_OF_CONDUCT.md).
+
+## Reporting a problem, or suggesting an idea
+
+Open an issue and choose **Report a problem** or **Suggest an idea**. Please **never attach private PDFs** or anything with personal details: issues are public. Describe the file instead, or make a test file that shows the same problem.
+
+A security problem (anything that could expose someone's documents) goes privately instead: see [SECURITY.md](SECURITY.md).
+
 ## Before you start
 
 - For anything bigger than a small fix, open an issue first and describe what you'd like to change. ScribeForge is built in planned steps ([docs/Roadmap.md](docs/Roadmap.md)), and each phase starts with a written plan.
@@ -50,6 +58,15 @@ New features come with:
 - unit tests for the logic, and whole-app tests that drive the real app;
 - a short manual test script in `docs/manual-tests/`;
 - an update to the help pages in `content/help/`, and to the README if commands or behaviour change.
+
+## How a pull request is reviewed
+
+- **One topic per pull request.** A fix and a new feature are two pull requests.
+- **The checks must pass.** GitHub runs the typecheck, the unit tests and the whole-app tests (zero-network check included) on every pull request, on Windows. You'll see the result at the bottom of the pull request.
+- **Features need a plan first.** New features belong to an approved plan in `docs/` (as every part of ScribeForge does), so open an issue to talk about it before writing much code.
+- **The maintainer reviews and merges every change,** and may ask for changes first. Changes written with the help of AI tools are welcome, and follow exactly the same rules and review.
+- **Commit messages** say what changed in plain words. Codenames (such as Splitblade or Sealkeeper, from the [outline](docs/ScribeForge_Master_Outline.md)) are welcome there, but never in the app.
+- **The pull request form** has a short checklist; please go through it.
 
 ## Help pages
 
