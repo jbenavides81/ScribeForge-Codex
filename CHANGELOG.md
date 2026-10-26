@@ -13,6 +13,8 @@ What the three numbers mean:
 - A new help page, **Getting ScribeForge**: where releases are, why Windows warns about the installer, and how to check a download.
 - Each release now comes with a checksum file, so you can check a download is the one published. It also lists checksums for the app's own files: these come out the same every time the app is built, so anyone can rebuild it from the source and compare.
 - The installer no longer comes with files for automatic updates, which ScribeForge doesn't have.
+- Fixed: a window that's taller than the screen (on a small screen, or with a larger text size) now scrolls, so its buttons can always be reached. The **Sign** window's **Sign and save…** button could be out of reach since 1.5.0.
+- Fixed: on some PCs, the command line showed error lines from Chromium (the browser engine inside ScribeForge) after its own message.
 
 ## 1.9.0 (2026-10-26)
 

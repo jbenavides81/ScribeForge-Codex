@@ -52,7 +52,9 @@ npm test
 npm run e2e
 ```
 
-For changes to how the app is packaged, also run `npm run e2e:packaged`, which runs every whole-app test on the installed-app build. For anything you can see, look at `test-results\screens\contact-sheet.png`: it shows every screen in every theme.
+For changes to how the app is packaged, also run `npm run e2e:packaged`, which runs every whole-app test on the installed-app build.
+
+The same checks run on GitHub's Windows machines, whose screen is only 1024 by 768. To run the whole-app tests in a space that size on your PC, set `SCRIBEFORGE_TEST_SCREEN` first (in PowerShell: `$env:SCRIBEFORGE_TEST_SCREEN = '1024x728'`). For anything you can see, look at `test-results\screens\contact-sheet.png`: it shows every screen in every theme.
 
 New features come with:
 - unit tests for the logic, and whole-app tests that drive the real app;

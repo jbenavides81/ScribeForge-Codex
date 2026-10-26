@@ -105,9 +105,11 @@ test('voided documents are left out unless asked for; labels filter; pages witho
   // Rebuild: every document is read again, and the same searches give the same results.
   await screen(win).getByRole('button', { name: 'Rebuild the search index…' }).click();
   await win.getByTestId('confirm-dialog').getByRole('button', { name: 'Rebuild it' }).click();
-  await expect(screen(win).getByTestId('vault-indexing')).toHaveCount(0, { timeout: 30_000 });
-  await search(win, 'anvil');
-  await expect(results(win).getByTestId('search-result')).toContainText('3 pages match');
+  // The rebuild starts a moment after, and a slower PC takes longer: search until it has read the documents again.
+  await expect(async () => {
+    await search(win, 'anvil');
+    await expect(results(win).getByTestId('search-result')).toContainText('3 pages match', { timeout: 1000 });
+  }).toPass({ timeout: 30_000 });
   await search(win, 'quillword');
   await expect(results(win).getByTestId('search-result')).toContainText('Scanned and typed');
   await expect(textless).toContainText('Scanned and typed: page 2');

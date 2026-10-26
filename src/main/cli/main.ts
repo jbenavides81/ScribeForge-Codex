@@ -4,7 +4,7 @@
 // code the app uses. Its working data goes in a temporary folder that's removed afterwards, so it
 // never touches the app's settings and can run while the app is open.
 import { app, BrowserWindow, ipcMain, type IpcMainEvent, type WebContents } from 'electron';
-import { mkdtempSync, readdirSync, readSync, renameSync, rmSync, statSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readSync, realpathSync, renameSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { RenderJob, RenderResult } from '../../shared/cli';
@@ -156,8 +156,12 @@ function removeLeftovers(): void {
 /** Runs the command given by `words` and exits with its code. Called before the app is ready. */
 export function runCli(words: string[], rendererDir: string, devServer: string | undefined): void {
   removeLeftovers();
-  const temp = mkdtempSync(path.join(tmpdir(), PREFIX));
+  // By its full name: Windows can give the temporary folder a short one (such as RUNNER~1), which
+  // Chromium's caches can't use, and it says so on standard error (seen on GitHub's machines).
+  const temp = realpathSync.native(mkdtempSync(path.join(tmpdir(), PREFIX)));
   app.setPath('userData', temp);
+  // Only ScribeForge's own messages go to the command line, never Chromium's log lines.
+  app.commandLine.appendSwitch('log-level', '3');
   app.disableHardwareAcceleration();
   registerAppScheme();
   // Windows come and go (the password window, the hidden one); the tool exits only when it's done.

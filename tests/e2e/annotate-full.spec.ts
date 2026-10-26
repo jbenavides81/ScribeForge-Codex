@@ -64,9 +64,27 @@ async function open(run: Running, name: string): Promise<void> {
   await waitForFirstPage(run.win);
 }
 
+/**
+ * Page 1's box, scrolled first (as a person would) so the points given, as fractions of the page,
+ * are in view: on a small screen (such as GitHub's, 1024 by 768) the lower half of the page is
+ * below the window.
+ */
+async function pageBoxShowing(win: Page, ...fys: number[]) {
+  await page1(win).evaluate((el, fractions) => {
+    const r = el.getBoundingClientRect();
+    const top = r.top + r.height * Math.min(...fractions);
+    const bottom = r.top + r.height * Math.max(...fractions);
+    if (top >= 80 && bottom <= window.innerHeight - 40) return;
+    let box: HTMLElement | null = el.parentElement;
+    while (box && !(box.scrollHeight > box.clientHeight && /(auto|scroll)/.test(getComputedStyle(box).overflowY))) box = box.parentElement;
+    box?.scrollBy(0, (top + bottom) / 2 - window.innerHeight / 2);
+  }, fys);
+  return (await page1(win).boundingBox())!;
+}
+
 /** Drags on page 1 between two points given as fractions of the page. */
 async function drag(win: Page, from: [number, number], to: [number, number], steps = 8): Promise<void> {
-  const box = (await page1(win).boundingBox())!;
+  const box = await pageBoxShowing(win, from[1], to[1]);
   await win.mouse.move(box.x + box.width * from[0], box.y + box.height * from[1]);
   await win.mouse.down();
   await win.mouse.move(box.x + box.width * to[0], box.y + box.height * to[1], { steps });
@@ -74,7 +92,7 @@ async function drag(win: Page, from: [number, number], to: [number, number], ste
 }
 
 async function clickPage(win: Page, fx: number, fy: number): Promise<void> {
-  const box = (await page1(win).boundingBox())!;
+  const box = await pageBoxShowing(win, fy);
   await win.mouse.click(box.x + box.width * fx, box.y + box.height * fy);
 }
 

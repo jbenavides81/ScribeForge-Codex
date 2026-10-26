@@ -76,3 +76,12 @@ describe('style rules', () => {
     }
   });
 });
+
+describe('fitting small screens', () => {
+  it('a dialog taller than the window scrolls, so its buttons can always be reached (found on GitHub\'s 1024 by 768 screen)', () => {
+    const css = readFileSync(path.join(SCAN, 'styles.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    const dialog = /\.sf-dialog \{([^}]*)\}/.exec(css)?.[1] ?? '';
+    expect(dialog).toMatch(/max-height: calc\(100vh - 2rem\);/);
+    expect(dialog).toMatch(/overflow-y: auto;/);
+  });
+});

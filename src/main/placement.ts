@@ -19,7 +19,12 @@ export function placeAndShow(win: BrowserWindow): void {
   }
   const displays = screen.getAllDisplays();
   const left = displays.reduce((a, b) => (b.bounds.x < a.bounds.x ? b : a), displays[0]);
-  const area = left.workArea;
+  // SCRIBEFORGE_TEST_SCREEN=1024x728 runs the tests in a space that size, as on GitHub's Windows
+  // machines, whose screen is 1024 by 768 (stop 4c), so problems with small screens show up here too.
+  const size = /^(\d+)x(\d+)$/.exec(process.env.SCRIBEFORGE_TEST_SCREEN ?? '');
+  const area = size
+    ? { ...left.workArea, width: Math.min(left.workArea.width, Number(size[1])), height: Math.min(left.workArea.height, Number(size[2])) }
+    : left.workArea;
   const [w, h] = win.getSize();
   win.setBounds({
     x: area.x + Math.max(0, Math.floor((area.width - w) / 2)),
